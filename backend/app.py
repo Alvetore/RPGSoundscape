@@ -604,10 +604,11 @@ if STATIC_DIR.exists():
 
 if __name__ == "__main__":
     import uvicorn
+    port = int(os.environ.get("PORT", 8000))
     local_ip = get_local_ip()
     print("=" * 60)
     print(" RPG Music & Ambience Studio")
-    print(f" Local Web:   http://localhost:8000")
-    print(f" Android/LAN: http://{local_ip}:8000")
+    print(f" Local Web:   http://localhost:{port}")
+    print(f" Android/LAN: http://{local_ip}:{port}")
     print("=" * 60)
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=port)

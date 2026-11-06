@@ -2,6 +2,11 @@
 node_modules/
 frontend/node_modules/
 
+# Electron / build outputs
+release/
+frontend/dist/
+*.lnk
+
 # Python cache
 __pycache__/
 *.py[cod]

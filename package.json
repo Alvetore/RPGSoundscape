@@ -6,7 +6,8 @@
   "scripts": {
     "start": "electron electron/main.cjs",
     "build:frontend": "cd frontend && npm run build",
-    "dev": "concurrently \"cd frontend && npm run dev\" \"electron electron/main.cjs\""
+    "dist": "npm run build:frontend && electron-builder --win",
+    "pack": "npm run build:frontend && electron-builder --dir"
   },
   "repository": {
     "type": "git",
@@ -15,15 +16,52 @@
   "keywords": [
     "rpg",
     "soundscape",
-    "ambient",
-    "dnd",
-    "tabletop",
     "electron",
     "soundboard"
   ],
   "author": "Alvetore",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^45.2.3"
+    "electron": "^34.3.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.rpg.soundscape",
+    "productName": "RPGSoundscape",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.ico"
+    },
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend"
+      },
+      {
+        "from": "frontend/dist",
+        "to": "frontend/dist"
+      }
+    ],
+    "files": [
+      "electron/**/*",
+      "icon.ico"
+    ],
+    "asar": true
   }
 }

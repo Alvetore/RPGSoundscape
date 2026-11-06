@@ -6,7 +6,22 @@ const fs = require('fs');
 
 let mainWindow = null;
 let pythonProcess = null;
-const ROOT_DIR = path.resolve(__dirname, '..');
+
+function getRootDir() {
+  if (app.isPackaged) {
+    const resPath = process.resourcesPath;
+    if (fs.existsSync(path.join(resPath, 'backend', 'app.py'))) {
+      return resPath;
+    }
+    const exeDir = path.dirname(process.execPath);
+    if (fs.existsSync(path.join(exeDir, 'backend', 'app.py'))) {
+      return exeDir;
+    }
+  }
+  return path.resolve(__dirname, '..');
+}
+
+const ROOT_DIR = getRootDir();
 const PORT = 8000;
 
 function findPython() {
@@ -106,6 +121,19 @@ function startBackend() {
   });
 }
 
+function getAppIcon() {
+  const candidates = [
+    path.join(ROOT_DIR, 'icon.ico'),
+    path.join(ROOT_DIR, 'frontend', 'dist', 'icon-512.png'),
+    path.join(ROOT_DIR, 'frontend', 'public', 'icon-512.png'),
+    path.join(__dirname, '..', 'icon.ico')
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return undefined;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360,
@@ -114,7 +142,7 @@ function createWindow() {
     minHeight: 640,
     title: 'RPG Soundscape Studio',
     backgroundColor: '#0c0e14',
-    icon: path.join(ROOT_DIR, 'frontend', 'public', 'icon-512.png'),
+    icon: getAppIcon(),
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
