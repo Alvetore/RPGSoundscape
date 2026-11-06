@@ -7,7 +7,8 @@ import {
   Smartphone, 
   SlidersHorizontal,
   Bookmark, 
-  FolderPlus
+  FolderPlus,
+  Grid
 } from 'lucide-react';
 import { YoutubeIcon } from './Icons';
 import { getSoundEngine } from '../audio/SoundEngine';
@@ -21,8 +22,8 @@ interface HeaderProps {
   totalChannels: number;
   onOpenYoutubeModal: () => void;
   onOpenMobileModal: () => void;
-  activeTab: 'mixer' | 'library' | 'presets';
-  setActiveTab: (tab: 'mixer' | 'library' | 'presets') => void;
+  activeTab: 'mixer' | 'soundboard' | 'library' | 'presets';
+  setActiveTab: (tab: 'mixer' | 'soundboard' | 'library' | 'presets') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -91,12 +92,24 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
-            <span>Микшер (16)</span>
+            <span>Микшер</span>
             {activeCount > 0 && (
               <span className="ml-1 px-1.5 py-0.2 text-[11px] rounded-full bg-black/30 text-white font-bold">
                 {activeCount}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('soundboard')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              activeTab === 'soundboard'
+                ? 'bg-amber-500 text-black shadow-glow-gold font-semibold'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Grid className="w-4 h-4" />
+            <span>Тачпад</span>
           </button>
 
           <button

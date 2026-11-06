@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { MixerPanel } from './components/MixerPanel';
+import { TouchSoundboard } from './components/TouchSoundboard';
 import { LibraryPanel } from './components/LibraryPanel';
 import { PresetPanel } from './components/PresetPanel';
+import { MobileNav } from './components/MobileNav';
 import { YoutubeModal } from './components/YoutubeModal';
 import { MobileConnectModal } from './components/MobileConnectModal';
 import { getSoundEngine, ChannelState } from './audio/SoundEngine';
@@ -19,7 +21,7 @@ export const App: React.FC = () => {
   const [masterVolume, setMasterVolume] = useState<number>(0.8);
   const [isMasterMuted, setIsMasterMuted] = useState<boolean>(false);
 
-  const [activeTab, setActiveTab] = useState<'mixer' | 'library' | 'presets'>('mixer');
+  const [activeTab, setActiveTab] = useState<'mixer' | 'soundboard' | 'library' | 'presets'>('mixer');
   const [isYoutubeModalOpen, setIsYoutubeModalOpen] = useState(false);
   const [isMobileModalOpen, setIsMobileModalOpen] = useState(false);
   const [selectedSlotForAssign, setSelectedSlotForAssign] = useState<number | null>(null);
@@ -143,13 +145,20 @@ export const App: React.FC = () => {
       />
 
       {/* Main Content View */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 pb-20 md:pb-6">
         {activeTab === 'mixer' && (
           <MixerPanel
             channels={channels}
             onSelectTrackForSlot={handleSelectTrackForSlot}
             onDropTrack={handleDropTrack}
             library={library}
+          />
+        )}
+
+        {activeTab === 'soundboard' && (
+          <TouchSoundboard
+            channels={channels}
+            onSelectTrackForSlot={handleSelectTrackForSlot}
           />
         )}
 
@@ -175,8 +184,15 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Footer Info */}
-      <footer className="border-t border-rpg-border/60 py-3 px-4 text-center text-xs text-slate-500 bg-rpg-panel/40">
+      {/* Mobile Bottom Navigation (Visible on Android / Small screens) */}
+      <MobileNav
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        activeCount={activeCount}
+      />
+
+      {/* Footer Info (Hidden on mobile to save space) */}
+      <footer className="hidden md:block border-t border-rpg-border/60 py-3 px-4 text-center text-xs text-slate-500 bg-rpg-panel/40">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>

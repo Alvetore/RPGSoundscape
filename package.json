@@ -1,0 +1,29 @@
+{
+  "name": "rpg-soundscape-studio",
+  "version": "1.0.0",
+  "description": "RPG Soundscape Studio — десктопное приложение для ведущих и игроков настольных ролевых игр",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron electron/main.cjs",
+    "build:frontend": "cd frontend && npm run build",
+    "dev": "concurrently \"cd frontend && npm run dev\" \"electron electron/main.cjs\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alvetore/RPGSoundscape.git"
+  },
+  "keywords": [
+    "rpg",
+    "soundscape",
+    "ambient",
+    "dnd",
+    "tabletop",
+    "electron",
+    "soundboard"
+  ],
+  "author": "Alvetore",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^45.2.3"
+  }
+}
