@@ -6,6 +6,7 @@ const fs = require('fs');
 
 let mainWindow = null;
 let pythonProcess = null;
+let backendLogs = [];
 
 function getRootDir() {
   if (app.isPackaged) {
@@ -24,37 +25,47 @@ function getRootDir() {
 const ROOT_DIR = getRootDir();
 const PORT = 8000;
 
+function appendLog(line) {
+  const formatted = `[${new Date().toLocaleTimeString()}] ${line}`;
+  backendLogs.push(formatted);
+  if (backendLogs.length > 50) backendLogs.shift();
+  try {
+    const logPath = path.join(path.dirname(process.execPath), 'backend_startup.log');
+    fs.appendFileSync(logPath, formatted + '\n');
+  } catch (e) {}
+  console.log(line);
+}
+
 function findPython() {
   const userProfile = process.env.USERPROFILE || '';
   const localAppData = process.env.LOCALAPPDATA || '';
 
   const candidates = [
-    'python',
-    'py',
+    // 1. AppData Programs Python (Clean standard CPython 3.12 / 3.13)
+    path.join(localAppData, 'Programs', 'Python', 'Python312', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python313', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python311', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python310', 'python.exe'),
+    // 2. Conda installations
     path.join(userProfile, 'miniconda3', 'python.exe'),
     path.join(userProfile, 'anaconda3', 'python.exe'),
+    // 3. Fallback
+    'python',
+    'py'
   ];
 
-  // Also check AppData python
-  if (localAppData) {
-    const pyDir = path.join(localAppData, 'Programs', 'Python');
-    if (fs.existsSync(pyDir)) {
-      try {
-        const dirs = fs.readdirSync(pyDir);
-        for (const d of dirs) {
-          const exe = path.join(pyDir, d, 'python.exe');
-          if (fs.existsSync(exe)) candidates.push(exe);
-        }
-      } catch (e) {}
-    }
-  }
-
   for (const candidate of candidates) {
-    if (candidate.includes('\\') && fs.existsSync(candidate)) {
+    if (candidate.includes('\\')) {
+      if (fs.existsSync(candidate)) {
+        appendLog(`Found Python at: ${candidate}`);
+        return candidate;
+      }
+    } else {
+      appendLog(`Checking PATH for: ${candidate}`);
       return candidate;
     }
   }
-  return 'python'; // fallback to PATH
+  return 'python';
 }
 
 function checkServerReady(port) {
@@ -63,60 +74,111 @@ function checkServerReady(port) {
       resolve(res.statusCode === 200);
     });
     req.on('error', () => resolve(false));
-    req.setTimeout(500, () => {
+    req.setTimeout(2000, () => {
       req.abort();
       resolve(false);
     });
   });
 }
 
-async function waitForBackend(port, maxWaitMs = 12000) {
+async function waitForBackend(port, maxWaitMs = 25000) {
   const startTime = Date.now();
   while (Date.now() - startTime < maxWaitMs) {
     const ready = await checkServerReady(port);
     if (ready) return true;
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 400));
   }
   return false;
 }
 
 function startBackend() {
   return new Promise(async (resolve) => {
-    // If already running
+    appendLog('Starting backend initialization...');
+    
+    // Check if already running (e.g. from a previous instance or terminal)
     const alreadyUp = await checkServerReady(PORT);
     if (alreadyUp) {
-      console.log(`Backend is already running on port ${PORT}`);
+      appendLog(`Backend is already alive on port ${PORT}`);
       return resolve(true);
     }
 
     const pyExe = findPython();
-    const appPy = path.join(ROOT_DIR, 'backend', 'app.py');
+    const backendDir = path.join(ROOT_DIR, 'backend');
+    const appPy = path.join(backendDir, 'app.py');
 
-    console.log(`Starting Python backend with: ${pyExe}`);
-    pythonProcess = spawn(pyExe, [appPy], {
-      cwd: ROOT_DIR,
-      env: { ...process.env, PORT: String(PORT) },
-      stdio: 'pipe',
-    });
+    if (!fs.existsSync(appPy)) {
+      appendLog(`ERROR: Backend entry script not found: ${appPy}`);
+      dialog.showErrorBox(
+        'Ошибка: файл сервера не найден',
+        `Не найден файл запуска бэкенда:\n${appPy}\n\nROOT_DIR: ${ROOT_DIR}`
+      );
+      return resolve(false);
+    }
+
+    // Set up PATH including Python Scripts and Conda Library/bin if available
+    const pyDir = pyExe.includes('\\') ? path.dirname(pyExe) : '';
+    let envPath = process.env.PATH || '';
+    if (pyDir) {
+      const condaBins = [
+        pyDir,
+        path.join(pyDir, 'Scripts'),
+        path.join(pyDir, 'Library', 'bin'),
+        path.join(pyDir, 'Library', 'usr', 'bin')
+      ];
+      envPath = `${condaBins.join(';')};${envPath}`;
+    }
+
+    appendLog(`Spawning Python process: "${pyExe}" "${appPy}" in cwd: "${backendDir}"`);
+    
+    try {
+      pythonProcess = spawn(pyExe, [appPy], {
+        cwd: backendDir,
+        env: {
+          ...process.env,
+          PORT: String(PORT),
+          PATH: envPath,
+          PYTHONPATH: backendDir,
+          PYTHONUNBUFFERED: '1'
+        },
+        stdio: 'pipe',
+      });
+    } catch (spawnErr) {
+      appendLog(`Spawn exception: ${spawnErr.message}`);
+      dialog.showErrorBox('Ошибка запуска Python', `Не удалось запустить процесс Python:\n${spawnErr.message}`);
+      return resolve(false);
+    }
 
     pythonProcess.stdout.on('data', (data) => {
-      console.log(`[Python]: ${data}`);
+      appendLog(`[Python]: ${data.toString().trim()}`);
     });
 
     pythonProcess.stderr.on('data', (data) => {
-      console.error(`[Python err]: ${data}`);
+      appendLog(`[Python err]: ${data.toString().trim()}`);
     });
 
     pythonProcess.on('error', (err) => {
-      console.error('Failed to spawn Python process:', err);
+      appendLog(`[Python process error]: ${err.message}`);
     });
 
-    pythonProcess.on('exit', (code) => {
-      console.log(`Python process exited with code ${code}`);
+    pythonProcess.on('exit', (code, signal) => {
+      appendLog(`[Python exit]: code=${code}, signal=${signal}`);
       pythonProcess = null;
     });
 
-    const isReady = await waitForBackend(PORT);
+    const isReady = await waitForBackend(PORT, 25000);
+    appendLog(`Backend ready status after wait: ${isReady}`);
+    
+    if (!isReady) {
+      const logDump = backendLogs.slice(-20).join('\n');
+      dialog.showErrorBox(
+        'Ошибка запуска бэкенда',
+        `Не удалось подключиться к локальному аудио-серверу на порту ${PORT} за 25 секунд.\n\n` +
+        `Python: ${pyExe}\n` +
+        `Скрипт: ${appPy}\n\n` +
+        `Журнал вывода:\n${logDump || 'Нет вывода'}`
+      );
+    }
+
     resolve(isReady);
   });
 }
@@ -147,7 +209,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false, // allow loading local assets
+      webSecurity: false,
     },
   });
 
@@ -159,15 +221,8 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  console.log('RPG Soundscape Studio starting in Electron...');
+  appendLog('RPG Soundscape Studio starting up in Electron...');
   const ready = await startBackend();
-  if (!ready) {
-    dialog.showErrorBox(
-      'Ошибка запуска бэкенда',
-      'Не удалось запустить локальный аудио-сервер Python на порту 8000.\n' +
-      'Убедитесь, что установлены зависимости из backend\\requirements.txt.'
-    );
-  }
   createWindow();
 
   app.on('activate', () => {
@@ -177,7 +232,7 @@ app.whenReady().then(async () => {
 
 function cleanup() {
   if (pythonProcess) {
-    console.log('Killing Python backend process...');
+    appendLog('Terminating Python backend process...');
     try {
       if (process.platform === 'win32') {
         spawn('taskkill', ['/pid', pythonProcess.pid, '/f', '/t']);
@@ -185,7 +240,7 @@ function cleanup() {
         pythonProcess.kill('SIGINT');
       }
     } catch (e) {
-      console.error('Error stopping backend:', e);
+      appendLog(`Error stopping backend: ${e.message}`);
     }
     pythonProcess = null;
   }
