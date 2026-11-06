@@ -1,0 +1,9 @@
+{
+  "appId": "com.rpg.soundscape",
+  "appName": "RPG Soundscape Studio",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "cleartext": true
+  }
+}

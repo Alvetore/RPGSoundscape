@@ -1,0 +1,68 @@
+{
+  "tracks": [
+    {
+      "id": "f84fd7d3-0de7-4902-8b1c-8fe676470c3d",
+      "title": "Костёр (Campfire Crackles)",
+      "filename": "campfire_crackles.wav",
+      "duration": 8.0,
+      "category": "Wilderness",
+      "tags": [
+        "fire",
+        "camp",
+        "relax",
+        "night"
+      ],
+      "source": "local",
+      "filesize": 1411244,
+      "date_added": "2026-11-07T01:24:35.787700"
+    },
+    {
+      "id": "71fcf942-33c0-4863-8c94-112ef931b7b2",
+      "title": "Эхо катакомб (Dungeon Abyss)",
+      "filename": "dungeon_abyss.wav",
+      "duration": 8.0,
+      "category": "Dungeon",
+      "tags": [
+        "dungeon",
+        "dark",
+        "creepy",
+        "drone"
+      ],
+      "source": "local",
+      "filesize": 1411244,
+      "date_added": "2026-11-07T01:24:35.787700"
+    },
+    {
+      "id": "3979d70d-6f9a-4640-bf1b-9f49cba1300d",
+      "title": "Магический звон (Mystic Chimes)",
+      "filename": "mystic_chimes.wav",
+      "duration": 8.0,
+      "category": "Magic",
+      "tags": [
+        "magic",
+        "mystery",
+        "spell",
+        "bells"
+      ],
+      "source": "local",
+      "filesize": 1411244,
+      "date_added": "2026-11-07T01:24:35.787700"
+    },
+    {
+      "id": "d4084d9b-ed49-49e1-8179-93623223a1d4",
+      "title": "Ливень с громом (Rain Storm)",
+      "filename": "rain_storm.wav",
+      "duration": 8.0,
+      "category": "Weather",
+      "tags": [
+        "rain",
+        "storm",
+        "weather",
+        "thunder"
+      ],
+      "source": "local",
+      "filesize": 1411244,
+      "date_added": "2026-11-07T01:24:35.788218"
+    }
+  ]
+}

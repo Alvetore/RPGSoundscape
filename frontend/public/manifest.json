@@ -1,0 +1,21 @@
+{
+  "short_name": "RPG Soundscape",
+  "name": "RPG Soundscape Studio — Звуки & Музыка для НРИ",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0c0e14",
+  "theme_color": "#0c0e14",
+  "display": "standalone",
+  "orientation": "any"
+}

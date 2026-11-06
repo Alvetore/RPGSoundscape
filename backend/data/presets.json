@@ -1,0 +1,77 @@
+[
+  {
+    "id": "preset-forest-camp",
+    "name": "Ночной лагерь в глуши",
+    "description": "Треск костра, ночной ветер и мистическая тишина перед броском инициативы",
+    "category": "Wilderness",
+    "icon": "flame",
+    "slots": [
+      {
+        "slotIndex": 0,
+        "title": "Костёр (Campfire Crackles)",
+        "filename": "campfire_crackles.wav",
+        "volume": 0.65,
+        "loop": true,
+        "active": true
+      },
+      {
+        "slotIndex": 1,
+        "title": "Магический звон (Mystic Chimes)",
+        "filename": "mystic_chimes.wav",
+        "volume": 0.35,
+        "loop": true,
+        "active": true
+      }
+    ]
+  },
+  {
+    "id": "preset-dungeon-depths",
+    "name": "Катакомбы ужаса",
+    "description": "Глубокий гул темных залов и холодный подземный сквозняк",
+    "category": "Dungeon",
+    "icon": "skull",
+    "slots": [
+      {
+        "slotIndex": 0,
+        "title": "Эхо катакомб (Dungeon Abyss)",
+        "filename": "dungeon_abyss.wav",
+        "volume": 0.7,
+        "loop": true,
+        "active": true
+      },
+      {
+        "slotIndex": 1,
+        "title": "Магический звон (Mystic Chimes)",
+        "filename": "mystic_chimes.wav",
+        "volume": 0.4,
+        "loop": true,
+        "active": true
+      }
+    ]
+  },
+  {
+    "id": "preset-rain-sanctuary",
+    "name": "Убежище под ливнем",
+    "description": "Шум бушующего снаружи шторма и тепло очага внутри",
+    "category": "Weather",
+    "icon": "beer",
+    "slots": [
+      {
+        "slotIndex": 0,
+        "title": "Ливень с громом (Rain Storm)",
+        "filename": "rain_storm.wav",
+        "volume": 0.6,
+        "loop": true,
+        "active": true
+      },
+      {
+        "slotIndex": 1,
+        "title": "Костёр (Campfire Crackles)",
+        "filename": "campfire_crackles.wav",
+        "volume": 0.5,
+        "loop": true,
+        "active": true
+      }
+    ]
+  }
+]

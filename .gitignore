@@ -1,0 +1,25 @@
+# Node dependencies
+node_modules/
+frontend/node_modules/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.tmp
+*.log
+
+# Sensitive data / personal cookies
+backend/data/cookies.txt
+*.pem
+*.key
+.env
+
+# OS files
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
