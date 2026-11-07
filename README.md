@@ -121,6 +121,8 @@ npm run build:android
 ```
 Скрипт собирает frontend, копирует его в `android/app/src/main/assets/www`, запускает Gradle и кладёт подписанный APK в `release\RPGSoundscape-Android-1.1.0.apk`. Для сборки нужны Android SDK 35 и JDK 17+ (Android Studio JBR подходит). Ключ подписи хранится локально в `android/rpg-release.keystore` и не коммитится — сохраните его, чтобы выпускать обновления поверх установленной версии.
 
+Отпечаток сертификата подписи APK (SHA-256): `9AEA222F82DC97776C19E8211658F56A27A80C06E7BA406CB134CC9834A6096F`.
+
 ---
 
 ## 🚀 Быстрый старт на Windows
