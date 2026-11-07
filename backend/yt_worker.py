@@ -3,6 +3,7 @@ import os
 import json
 import argparse
 import logging
+import shutil
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -15,6 +16,12 @@ sys.stderr.reconfigure(line_buffering=True)
 import yt_dlp
 
 DEFAULT_COBALT_APIS = ("https://rue-cobalt.xenon.zone",)
+# Best-effort last-resort proxies. They are only used when both direct yt-dlp
+# and Cobalt fail, and the request is made without YouTube cookies.
+DEFAULT_PROXIES = (
+    "http://102.244.78.61:8085",
+    "http://206.135.47.110:999",
+)
 MAX_DOWNLOAD_BYTES = int(os.environ.get("RPG_MAX_DOWNLOAD_MB", "500")) * 1024 * 1024
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -36,6 +43,15 @@ def get_cobalt_apis():
     if raw:
         return [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
     return [item.rstrip("/") for item in DEFAULT_COBALT_APIS]
+
+
+def get_proxies():
+    raw = os.environ.get("RPG_YTDL_PROXIES", "").strip()
+    if raw.lower() in ("0", "off", "none", "false"):
+        return []
+    if raw:
+        return [item.strip() for item in raw.split(",") if item.strip()]
+    return list(DEFAULT_PROXIES)
 
 
 def is_youtube_url(url: str) -> bool:
@@ -172,6 +188,64 @@ def download_via_cobalt(
     raise RuntimeError("; ".join(errors) if errors else "cobalt fallback disabled")
 
 
+def download_via_proxies(
+    video_url: str,
+    file_id: str,
+    library_dir: Path,
+    custom_title: str,
+    category: str,
+    tags: list,
+    base_opts: dict,
+) -> dict:
+    """Last-resort retry through best-effort HTTP proxies without cookies."""
+    errors = []
+    for proxy in get_proxies():
+        for partial in library_dir.glob(f"{file_id}.*"):
+            try:
+                partial.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        emit(status="downloading", percent=0, fallback="proxy")
+        proxy_opts = dict(base_opts)
+        proxy_opts.pop("cookiefile", None)
+        proxy_opts.pop("cookiesfrombrowser", None)
+        proxy_opts["proxy"] = proxy
+        proxy_opts["format"] = "b/b*/ba/best/worst"
+
+        try:
+            with yt_dlp.YoutubeDL(proxy_opts) as ydl:
+                info = ydl.extract_info(video_url, download=True)
+
+            final_path = library_dir / f"{file_id}.mp3"
+            if not final_path.exists():
+                candidates = list(library_dir.glob(f"{file_id}.*"))
+                if not candidates:
+                    raise RuntimeError("audio file not found after proxy download")
+                final_path = candidates[0]
+
+            title = (
+                custom_title.strip()
+                or info.get("title", "YouTube Audio")
+            )
+            return {
+                "id": file_id,
+                "title": title,
+                "filename": final_path.name,
+                "duration": info.get("duration", 0),
+                "category": category or "YouTube",
+                "tags": tags or ["youtube"],
+                "source": "youtube",
+                "source_url": video_url,
+                "filesize": final_path.stat().st_size,
+                "downloader": "proxy",
+            }
+        except Exception as exc:
+            errors.append(f"{proxy}: {exc}")
+
+    raise RuntimeError("; ".join(errors) if errors else "proxy fallback disabled")
+
+
 def build_result(file_id: str, final_path: Path, title: str, duration, category: str, tags: list):
     return {
         "id": file_id,
@@ -220,6 +294,7 @@ def main():
     opts = {
         'quiet': True,
         'no_warnings': True,
+        'noprogress': True,
         'socket_timeout': 15,
         'outtmpl': output_template,
         'format': 'ba/ba*/b/b*/best/worst',
@@ -234,11 +309,13 @@ def main():
         }],
         'progress_hooks': [progress_hook],
     }
+    if shutil.which("node"):
+        # yt-dlp 2026 needs a JS runtime for YouTube's player challenges.
+        opts['js_runtimes'] = {'node': {}}
 
     # Cookie configuration with isolated copy
     temp_cookie_copy = None
     if args.cookies_file and os.path.exists(args.cookies_file) and os.path.getsize(args.cookies_file) > 10:
-        import shutil
         temp_cookie_copy = library_dir.parent / "data" / f"worker_cookie_{args.file_id}.txt"
         try:
             shutil.copyfile(args.cookies_file, temp_cookie_copy)
@@ -305,6 +382,25 @@ def main():
             return
         except Exception as fallback_error:
             ytdlp_error = Exception(f"{ytdlp_error}; Cobalt fallback: {fallback_error}")
+
+    # Last resort: retry through best-effort public proxies, WITHOUT sending
+    # the user's YouTube cookies through them.
+    if is_youtube_url(args.url) and get_proxies():
+        emit(status="downloading", percent=0, fallback="proxy")
+        try:
+            result = download_via_proxies(
+                args.url,
+                args.file_id,
+                library_dir,
+                args.title,
+                args.category,
+                tag_list,
+                opts,
+            )
+            print(f"RPGSUCCESS:{json.dumps(result)}", flush=True)
+            return
+        except Exception as proxy_error:
+            ytdlp_error = Exception(f"{ytdlp_error}; Proxy fallback: {proxy_error}")
 
     print(f"RPGERROR:{ytdlp_error}", flush=True)
     for partial in library_dir.glob(f"{args.file_id}.*"):

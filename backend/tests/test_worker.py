@@ -3,7 +3,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from yt_worker import extract_cobalt_media_url, get_cobalt_apis, is_safe_media_url
+from yt_worker import (
+    extract_cobalt_media_url,
+    get_cobalt_apis,
+    get_proxies,
+    is_safe_media_url,
+)
 
 
 def test_cobalt_tunnel_url_is_extracted():
@@ -38,3 +43,13 @@ def test_unsafe_media_urls_are_rejected():
 def test_cobalt_can_be_disabled(monkeypatch):
     monkeypatch.setenv("RPG_COBALT_APIS", "0")
     assert get_cobalt_apis() == []
+
+
+def test_proxies_can_be_overridden(monkeypatch):
+    monkeypatch.setenv("RPG_YTDL_PROXIES", "http://proxy.example:8080")
+    assert get_proxies() == ["http://proxy.example:8080"]
+
+
+def test_proxies_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("RPG_YTDL_PROXIES", "0")
+    assert get_proxies() == []

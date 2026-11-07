@@ -546,6 +546,12 @@ def build_ydl_opts(for_download: bool = False, custom_browser: Optional[str] = N
 def translate_yt_error(err_str: str) -> str:
     """Translates technical yt-dlp / YouTube errors into clear, actionable advice."""
     lower = err_str.lower()
+    if "proxy fallback" in lower:
+        return (
+            "YouTube заблокировал прямое скачивание, внешний Cobalt-загрузчик и резервные прокси не смогли получить файл. "
+            "Попробуйте ещё раз через несколько минут, задайте рабочий прокси в RPG_YTDL_PROXIES "
+            "или перетащите MP3-файл в окно программы вручную."
+        )
     if "cobalt fallback" in lower:
         return (
             "YouTube заблокировал прямое скачивание, и внешний резервный загрузчик не смог получить файл. "
