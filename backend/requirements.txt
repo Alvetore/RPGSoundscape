@@ -1,5 +1,6 @@
+# Python 3.11+ is required (yt-dlp 2026.x and modern FastAPI releases).
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
-yt-dlp>=2024.10.0
+yt-dlp[default]>=2026.10.26
 python-multipart>=0.0.20
 pydantic>=2.7.0

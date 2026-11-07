@@ -546,12 +546,29 @@ def build_ydl_opts(for_download: bool = False, custom_browser: Optional[str] = N
 def translate_yt_error(err_str: str) -> str:
     """Translates technical yt-dlp / YouTube errors into clear, actionable advice."""
     lower = err_str.lower()
+    if "cobalt fallback" in lower:
+        return (
+            "YouTube заблокировал прямое скачивание, и внешний резервный загрузчик не смог получить файл. "
+            "Попробуйте ещё раз через несколько минут, смените VPN/сеть или перетащите MP3-файл "
+            "в окно программы вручную."
+        )
+    if (
+        "downloaded file is empty" in lower
+        or "unable to download video data" in lower
+        or "http error 403" in lower
+        or "no video formats found" in lower
+    ):
+        return (
+            "YouTube отдал информацию о видео, но заблокировал сам медиапоток (403/пустой ответ). "
+            "Обычно это связано с VPN/прокси, IP-адресом или PO Token. "
+            "Отключите VPN/смените сеть, обновите cookies или перетащите MP3-файл "
+            "в окно программы вручную."
+        )
     if "sign in to confirm you’re not a bot" in lower or "sign in to confirm" in lower:
         return (
             "YouTube заблокировал прямое скачивание защитой Google BotGuard (требуется PO Token). "
-            "В последнее время YouTube жестко ограничивает скачивание через сторонние плееры даже при авторизации. "
-            "Рекомендуем скачать этот трек в браузере или через Telegram-бота (@SaveYoutubeBot) "
-            "и перетащить файл напрямую в окно программы — он мгновенно добавится в вашу библиотеку!"
+            "Попробуйте отключить VPN/прокси или сменить сеть, заново экспортировать cookies "
+            "или перетащить MP3-файл в окно программы вручную."
         )
     elif "requested format is not available" in lower:
         return (
@@ -963,9 +980,9 @@ def run_yt_download(task_id: str, url: str, custom_title: Optional[str], categor
 
             line = line.strip()
             if line:
-                if line.startswith("PROGRESS:"):
+                if line.startswith("RPGPROGRESS:"):
                     try:
-                        payload = json.loads(line[len("PROGRESS:"):])
+                        payload = json.loads(line[len("RPGPROGRESS:"):])
                         status = payload.get("status")
                         if status == "downloading":
                             has_started_download = True
@@ -973,9 +990,9 @@ def run_yt_download(task_id: str, url: str, custom_title: Optional[str], categor
                     except Exception:
                         pass
 
-                elif line.startswith("SUCCESS:"):
+                elif line.startswith("RPGSUCCESS:"):
                     try:
-                        new_track = json.loads(line[len("SUCCESS:"):])
+                        new_track = json.loads(line[len("RPGSUCCESS:"):])
                         new_track["date_added"] = datetime.now().isoformat()
 
                         with _DATA_LOCK:
@@ -992,8 +1009,8 @@ def run_yt_download(task_id: str, url: str, custom_title: Optional[str], categor
                         logger.error(f"Error saving track metadata: {e}")
                     break
 
-                elif line.startswith("ERROR:"):
-                    err_msg = line[len("ERROR:"):].strip()
+                elif line.startswith("RPGERROR:"):
+                    err_msg = line[len("RPGERROR:"):].strip()
                     logger.error(f"Worker reported error: {err_msg}")
                     download_tasks[task_id] = {
                         "status": "error",

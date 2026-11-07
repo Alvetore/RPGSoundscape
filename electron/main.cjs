@@ -79,9 +79,12 @@ function findPython() {
   const localAppData = process.env.LOCALAPPDATA || '';
 
   const candidates = [
-    // 1. AppData Programs Python (Clean standard CPython 3.12 / 3.13)
-    path.join(localAppData, 'Programs', 'Python', 'Python312', 'python.exe'),
+    // 1. Modern standalone Python (3.11+ required by yt-dlp 2026.x)
+    path.join(localAppData, 'Python', 'pythoncore-3.14-64', 'python.exe'),
+    path.join(localAppData, 'Python', 'pythoncore-3.13-64', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python314', 'python.exe'),
     path.join(localAppData, 'Programs', 'Python', 'Python313', 'python.exe'),
+    path.join(localAppData, 'Programs', 'Python', 'Python312', 'python.exe'),
     path.join(localAppData, 'Programs', 'Python', 'Python311', 'python.exe'),
     path.join(localAppData, 'Programs', 'Python', 'Python310', 'python.exe'),
     // 2. Conda installations

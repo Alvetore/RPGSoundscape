@@ -10,8 +10,32 @@ echo =========================================================
 echo    Запуск в режиме разработчика (Dev Mode)...
 echo =========================================================
 
-:: Detect Python executable
+:: Detect Python executable (3.11+ is required)
 set "PY_CMD="
+
+py -3.14 --version >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set "PY_CMD=py -3.14"
+    goto :DEV_FOUND
+)
+
+py -3.13 --version >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set "PY_CMD=py -3.13"
+    goto :DEV_FOUND
+)
+
+py -3.12 --version >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set "PY_CMD=py -3.12"
+    goto :DEV_FOUND
+)
+
+py -3.11 --version >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set "PY_CMD=py -3.11"
+    goto :DEV_FOUND
+)
 
 python --version >nul 2>&1
 if %ERRORLEVEL% equ 0 (

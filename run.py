@@ -10,6 +10,13 @@ import threading
 from pathlib import Path
 from urllib.parse import quote
 
+if sys.version_info < (3, 11):
+    print(
+        "\n[ОШИБКА] Для этой версии приложения требуется Python 3.11+.\n"
+        "Запустите через: py -3.14 run.py\n"
+    )
+    sys.exit(1)
+
 # Add backend directory to sys.path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR / "backend"))
