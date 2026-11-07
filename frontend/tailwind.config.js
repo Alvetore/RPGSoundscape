@@ -30,6 +30,15 @@ export default {
         'glow-gold': '0 0 20px -3px rgba(234, 179, 8, 0.35)',
         'glow-crimson': '0 0 20px -3px rgba(225, 29, 72, 0.4)',
         'glow-blue': '0 0 20px -3px rgba(56, 189, 248, 0.35)',
+      },
+      keyframes: {
+        'spin-slow': {
+          from: { transform: 'rotate(0deg)' },
+          to: { transform: 'rotate(360deg)' },
+        },
+      },
+      animation: {
+        'spin-slow': 'spin-slow 4s linear infinite',
       }
     },
   },

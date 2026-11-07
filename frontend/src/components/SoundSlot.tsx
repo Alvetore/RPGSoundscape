@@ -73,55 +73,64 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative rounded-xl border transition-all duration-200 flex flex-col justify-between overflow-hidden ${
+      className={`rpg-card rpg-card-hover relative flex flex-col justify-between overflow-hidden transition-all duration-200 ${
         isDragOver
-          ? 'border-amber-400 bg-amber-500/10 scale-[1.02] shadow-glow-gold'
+          ? 'border-amber-300/70 bg-amber-500/10 scale-[1.015] shadow-glow-gold'
           : channel.isPlaying
-          ? 'border-amber-500/50 bg-gradient-to-b from-rpg-panel to-slate-900/90 shadow-lg shadow-amber-500/5'
-          : 'border-rpg-border bg-rpg-panel/80 hover:border-slate-600'
+          ? 'border-amber-400/35 shadow-[0_20px_45px_-28px_rgba(234,179,8,0.55)]'
+          : 'hover:border-slate-500/30'
       }`}
     >
+      {channel.isPlaying && (
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-300/80 to-transparent" />
+      )}
+
       {/* Top Bar: Slot ID, Title, Unload */}
-      <div className="p-3 pb-2 border-b border-rpg-border/60">
+      <div className="border-b border-white/[0.055] p-3.5 pb-3">
         <div className="flex items-center justify-between gap-2">
           
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className={`w-6 h-6 rounded-md text-xs font-mono font-bold flex items-center justify-center shrink-0 ${
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg font-mono text-[11px] font-bold ${
               channel.isPlaying 
-                ? 'bg-amber-500 text-black shadow-glow-gold' 
-                : 'bg-slate-800 text-slate-400 border border-slate-700'
+                ? 'bg-gradient-to-b from-amber-300 to-amber-500 text-[#211906] shadow-glow-gold' 
+                : 'border border-white/[0.07] bg-black/25 text-slate-400'
             }`}>
               {index + 1}
             </span>
 
             <div className="min-w-0 flex-1">
               <p 
-                className={`text-xs font-semibold truncate ${
-                  hasTrack ? 'text-slate-200' : 'text-slate-500 italic'
+                className={`truncate text-xs font-semibold ${
+                  hasTrack ? 'text-slate-100' : 'italic text-slate-500'
                 }`}
                 title={channel.title}
               >
                 {channel.title}
               </p>
-              {hasTrack && (
-                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-                  <span>{formatTime(channel.currentTime)}</span>
-                  <span>/</span>
+              {hasTrack ? (
+                <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-slate-500">
+                  <span className="text-slate-400">{formatTime(channel.currentTime)}</span>
+                  <span className="text-slate-700">/</span>
                   <span>{formatTime(channel.duration)}</span>
+                  <span className={`ml-1 h-1 w-1 rounded-full ${channel.isPlaying ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                  <span className={channel.isPlaying ? 'text-emerald-400/90' : ''}>
+                    {channel.isPlaying ? 'playing' : 'paused'}
+                  </span>
                 </div>
+              ) : (
+                <p className="mt-0.5 text-[10px] text-slate-600">Свободный канал</p>
               )}
             </div>
           </div>
 
-          {/* Action icons: Clear slot, Solo, Mute */}
           <div className="flex items-center gap-1">
             <button
               onClick={() => engine.toggleSolo(index)}
               title={channel.isSolo ? "Отключить соло" : "Соло этого канала"}
-              className={`w-6 h-6 rounded text-[10px] font-bold transition-colors ${
+              className={`flex h-6 w-6 items-center justify-center rounded-md border text-[10px] font-bold transition-colors ${
                 channel.isSolo
-                  ? 'bg-amber-500 text-black shadow-glow-gold'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                  ? 'border-amber-300/50 bg-amber-400/20 text-amber-300'
+                  : 'border-white/[0.06] bg-black/20 text-slate-500 hover:border-white/15 hover:text-slate-200'
               }`}
             >
               S
@@ -130,10 +139,10 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
             <button
               onClick={() => engine.toggleMute(index)}
               title={channel.isMuted ? "Включить звук" : "Заглушить канал"}
-              className={`w-6 h-6 rounded text-[10px] font-bold transition-colors ${
+              className={`flex h-6 w-6 items-center justify-center rounded-md border text-[10px] font-bold transition-colors ${
                 channel.isMuted
-                  ? 'bg-crimson text-white shadow-glow-crimson'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                  ? 'border-red-400/50 bg-red-500/20 text-red-300'
+                  : 'border-white/[0.06] bg-black/20 text-slate-500 hover:border-white/15 hover:text-slate-200'
               }`}
             >
               M
@@ -143,7 +152,7 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
               <button
                 onClick={() => engine.clearSlot(index)}
                 title="Очистить слот"
-                className="w-6 h-6 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 flex items-center justify-center transition-colors"
+                className="flex h-6 w-6 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-red-500/10 hover:text-red-300"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -151,60 +160,61 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
           </div>
         </div>
 
-        {/* Real-time LED VU Meter bar */}
-        <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden mt-2.5 flex">
+        <div className="mt-3 flex h-1.5 w-full overflow-hidden rounded-full bg-black/35">
           <div
-            className="h-full transition-all duration-75"
+            className="h-full rounded-full transition-all duration-75"
             style={{
               width: `${levelPercent}%`,
-              backgroundColor: levelPercent > 80 ? '#ef4444' : levelPercent > 50 ? '#f59e0b' : '#10b981',
-              boxShadow: levelPercent > 0 ? '0 0 6px currentColor' : 'none',
+              background: levelPercent > 80
+                ? 'linear-gradient(90deg, #f59e0b, #ef4444)'
+                : levelPercent > 50
+                ? 'linear-gradient(90deg, #10b981, #f59e0b)'
+                : 'linear-gradient(90deg, #059669, #10b981)',
+              boxShadow: levelPercent > 0 ? '0 0 10px rgba(16,185,129,0.45)' : 'none',
             }}
           />
         </div>
       </div>
 
       {/* Main Controls Body */}
-      <div className="p-3 space-y-3 flex-1 flex flex-col justify-center">
+      <div className="flex flex-1 flex-col justify-center space-y-3 p-3.5">
         
         {hasTrack ? (
           <>
-            {/* Primary Transport: Play/Pause, Stop, Loop */}
             <div className="flex items-center justify-between gap-2">
               
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => engine.togglePlay(index)}
-                  className={`w-11 h-9 rounded-lg flex items-center justify-center transition-all ${
+                  className={`flex h-10 w-12 items-center justify-center rounded-xl transition-all ${
                     channel.isPlaying
-                      ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-glow-gold'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                      ? 'bg-gradient-to-b from-amber-300 to-amber-500 text-[#211906] shadow-glow-gold hover:from-amber-200 hover:to-amber-400'
+                      : 'border border-white/[0.09] bg-white/[0.04] text-slate-200 hover:border-amber-300/30 hover:bg-white/[0.07]'
                   }`}
                   title={channel.isPlaying ? "Пауза" : "Воспроизвести"}
                 >
                   {channel.isPlaying ? (
                     <Pause className="w-4 h-4 fill-current" />
                   ) : (
-                    <Play className="w-4 h-4 fill-current ml-0.5" />
+                    <Play className="ml-0.5 w-4 h-4 fill-current" />
                   )}
                 </button>
 
                 <button
                   onClick={() => engine.stopSlot(index)}
-                  className="w-8 h-9 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors border border-slate-700/60"
+                  className="flex h-10 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-black/20 text-slate-500 transition-colors hover:bg-white/[0.05] hover:text-white"
                   title="Остановить и перемотать в начало"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
                 </button>
               </div>
 
-              {/* Loop Toggle */}
               <button
                 onClick={() => engine.setLoop(index, !channel.loop)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-semibold transition-all ${
                   channel.loop
-                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/40 shadow-sm'
-                    : 'bg-slate-800/60 text-slate-500 border-slate-700/50 hover:text-slate-300'
+                    ? 'border-amber-300/35 bg-amber-400/10 text-amber-300'
+                    : 'border-white/[0.06] bg-black/20 text-slate-500 hover:border-white/15 hover:text-slate-300'
                 }`}
                 title={channel.loop ? "Зацикленность ВКЛЮЧЕНА (бесконечно)" : "Зацикленность ВЫКЛЮЧЕНА (сыграет 1 раз)"}
               >
@@ -214,10 +224,9 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
 
             </div>
 
-            {/* Volume Fader */}
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <div className="flex items-center justify-between text-[11px] text-slate-400">
-                <span className="flex items-center gap-1 font-medium">
+                <span className="flex items-center gap-1.5 font-medium">
                   {channel.isMuted || channel.volume === 0 ? (
                     <VolumeX className="w-3 h-3 text-red-400" />
                   ) : (
@@ -225,7 +234,7 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
                   )}
                   Громкость
                 </span>
-                <span className="font-mono text-amber-400 font-semibold">
+                <span className="font-mono font-semibold text-amber-300">
                   {Math.round(channel.volume * 100)}%
                 </span>
               </div>
@@ -236,31 +245,29 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
                 step="0.01"
                 value={channel.volume}
                 onChange={(e) => engine.setVolume(index, parseFloat(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                className="w-full cursor-pointer bg-slate-800"
+                aria-label={`Громкость канала ${index + 1}`}
               />
             </div>
 
-            {/* Seek Bar */}
             {channel.duration > 0 && (
-              <div className="space-y-0.5">
-                <input
-                  type="range"
-                  min="0"
-                  max={channel.duration || 100}
-                  step="0.1"
-                  value={channel.currentTime}
-                  onChange={(e) => engine.seek(index, parseFloat(e.target.value))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-400"
-                  title="Перемотка дорожки"
-                />
-              </div>
+              <input
+                type="range"
+                min="0"
+                max={channel.duration || 100}
+                step="0.1"
+                value={channel.currentTime}
+                onChange={(e) => engine.seek(index, parseFloat(e.target.value))}
+                className="h-1 w-full cursor-pointer bg-slate-800 accent-sky-400"
+                title="Перемотка дорожки"
+                aria-label={`Перемотка канала ${index + 1}`}
+              />
             )}
 
-            {/* Advanced Controls Toggle (Pan & Speed) */}
             <div>
               <button
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="w-full flex items-center justify-between text-[10px] text-slate-500 hover:text-slate-300 py-1"
+                className="flex w-full items-center justify-between py-1 text-[10px] text-slate-500 transition-colors hover:text-slate-300"
               >
                 <span className="flex items-center gap-1">
                   <Sliders className="w-3 h-3" />
@@ -270,8 +277,7 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
               </button>
 
               {showAdvanced && (
-                <div className="pt-2 pb-1 space-y-2 border-t border-slate-800/80 animate-in fade-in duration-150">
-                  {/* Stereo Pan */}
+                <div className="space-y-2.5 border-t border-white/[0.06] pt-2.5 animate-in fade-in duration-150">
                   <div>
                     <div className="flex justify-between text-[10px] text-slate-400">
                       <span>Панорама (L/R)</span>
@@ -286,11 +292,11 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
                       step="0.05"
                       value={channel.pan}
                       onChange={(e) => engine.setPan(index, parseFloat(e.target.value))}
-                      className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                      className="mt-1 h-1 w-full cursor-pointer bg-slate-800"
+                      aria-label={`Панорама канала ${index + 1}`}
                     />
                   </div>
 
-                  {/* Playback Rate / Pitch */}
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-slate-400">Темп / Питч:</span>
                     <div className="flex items-center gap-1">
@@ -298,10 +304,10 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
                         <button
                           key={rate}
                           onClick={() => engine.setPlaybackRate(index, rate)}
-                          className={`text-[9px] px-1.5 py-0.5 rounded ${
+                          className={`rounded-md px-1.5 py-0.5 text-[9px] font-semibold ${
                             Math.abs(channel.playbackRate - rate) < 0.05
-                              ? 'bg-amber-500 text-black font-bold'
-                              : 'bg-slate-800 text-slate-400 hover:text-white'
+                              ? 'bg-amber-400 text-[#211906]'
+                              : 'border border-white/[0.05] bg-black/20 text-slate-500 hover:text-slate-200'
                           }`}
                         >
                           {rate}x
@@ -314,16 +320,17 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
             </div>
           </>
         ) : (
-          /* Empty Slot Dropzone View */
           <div 
             onClick={() => onSelectTrackForSlot(index)}
-            className="flex flex-col items-center justify-center p-4 rounded-lg border-2 border-dashed border-slate-700/60 hover:border-amber-500/50 hover:bg-amber-500/5 cursor-pointer transition-all text-center group"
+            className="group flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.09] bg-black/10 p-5 text-center transition-all hover:border-amber-300/35 hover:bg-amber-400/[0.04]"
           >
-            <Disc className="w-7 h-7 text-slate-600 group-hover:text-amber-400 transition-colors mb-1.5" />
-            <p className="text-xs font-medium text-slate-300 group-hover:text-amber-300">
+            <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.025] text-slate-600 transition-colors group-hover:border-amber-300/25 group-hover:text-amber-300">
+              <Disc className="h-4 w-4" />
+            </div>
+            <p className="text-xs font-semibold text-slate-300 group-hover:text-amber-200">
               Выбрать звук
             </p>
-            <p className="text-[10px] text-slate-500 mt-0.5">
+            <p className="mt-0.5 text-[10px] text-slate-600">
               или перетащите из библиотеки
             </p>
           </div>

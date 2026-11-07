@@ -4,7 +4,7 @@
 
 Приложение работает **полностью оффлайн**, открывается на Windows в собственном отдельном окне приложения (без браузера) и поддерживает многоканальное микширование до 16 звуковых источников одновременно.
 
-> Для backend требуется **Python 3.11+** (рекомендуется 3.14) и `ffmpeg` в PATH. Скачивание YouTube сначала идёт через `yt-dlp`, а при блокировке медиапотока автоматически включается внешний Cobalt-fallback (см. раздел ниже).
+> **Готовые сборки не требуют Python, Node.js или ffmpeg** — всё встроено в установщик и portable-версию. Для запуска из исходников нужен **Python 3.11+** (рекомендуется 3.14), `ffmpeg` и Node.js. Скачивание YouTube сначала идёт через `yt-dlp`, а при блокировке медиапотока автоматически включается Cobalt/прокси-fallback (см. раздел ниже).
 
 ---
 
@@ -104,10 +104,11 @@ npx cap open android
 
 Вы можете запустить приложение любым удобным способом без ввода команд в терминал:
 
-1. **Ярлык на Рабочем столе**: дважды щелкните по `RPGSoundscape` на рабочем столе.
-2. **Основной исполняемый файл**: запустите `RPGSoundscape.exe` прямо в корневой папке проекта.
-3. **Портативная версия (Single-file Portable Exe)**: `release\RPGSoundscape 1.0.0.exe`. Это автономная Electron-оболочка, но для backend по-прежнему нужен установленный **Python 3.11+** с зависимостями из `backend/requirements.txt`, а для YouTube-конвертации — **ffmpeg** в PATH. Данные (библиотека, пресеты, cookies) хранятся в `%APPDATA%\RPGSoundscape\storage` и не теряются при перезапуске.
-4. **Резервный запуск**: файл `start.bat` (облегченный bat без кириллицы).
+1. **Установщик**: `RPGSoundscape-Setup-1.0.0.exe` из [GitHub Releases](https://github.com/Alvetore/RPGSoundscape/releases). Устанавливается в профиль пользователя, создаёт ярлыки.
+2. **Портативная версия**: `RPGSoundscape-Portable-1.0.0.exe` — один файл, не требует установки. Backend, Python, Node.js и ffmpeg уже встроены; нужна только Windows 10/11 x64.
+3. **Из исходников**: `start.bat` или `npm start` (требуется Python 3.11+, Node.js 22+ и ffmpeg).
+
+Данные (библиотека, пресеты, cookies) хранятся в `%APPDATA%\RPGSoundscape\storage` и не теряются при обновлении или перезапуске. Portable-версия также использует этот каталог.
 
 Приложение запускается в собственном темном отдельном окне программы (Electron) с кастомной RPG-иконкой в панели задач. Локальный движок аудио поднимается автоматически.
 
@@ -123,6 +124,18 @@ py -3.14 -m pip install -r backend/requirements.txt -r backend/requirements-dev.
 py -3.14 -m pytest backend/tests -q
 ```
 Нужен **Python 3.11+** (рекомендуется 3.14). CI-пайплайн `.github/workflows/ci.yml` дополнительно собирает frontend на каждый push/PR.
+
+### Сборка установщика и portable:
+
+```bash
+py -3.14 -m pip install -r backend/requirements-build.txt
+npm run dist
+```
+
+Скрипт собирает self-contained backend через PyInstaller, копирует Node.js/ffmpeg и создаёт:
+
+- `release\RPGSoundscape-Setup-1.0.0.exe` — установщик;
+- `release\RPGSoundscape-Portable-1.0.0.exe` — портативная версия.
 
 ---
 
@@ -177,12 +190,16 @@ c:\11\RPGMusic\
 │   ├── app.py                 # FastAPI + WebSocket-хаб для пульта
 │   ├── requirements.txt       # Python библиотеки (fastapi, uvicorn, yt-dlp, etc.)
 │   ├── requirements-dev.txt   # pytest/httpx для тестов
+│   ├── requirements-build.txt # PyInstaller + imageio-ffmpeg
 │   ├── tests\                 # pytest: auth, path traversal, cookies, presets
 │   ├── audio_library\         # seed-файлы; пользовательские аудио хранятся в %APPDATA%
+│   ├── bin\                   # встроенные node.exe + ffmpeg.exe (генерируется при сборке)
 │   └── data\
 │       ├── library.json       # legacy-метаданные (мигрируются при первом запуске)
 │       └── presets.json       # legacy-пресеты (мигрируются при первом запуске)
 │
+├── backend-dist\              # self-contained rpg_backend.exe + rpg_yt_worker.exe
+├── scripts\                   # prepare_runtime.py + build_backend.py
 ├── %APPDATA%\RPGSoundscape\storage\
 │   ├── audio_library\         # все загруженные и скачанные треки пользователя
 │   └── data\

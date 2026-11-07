@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UploadCloud, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import {
+  UploadCloud,
+  CheckCircle2,
+  Loader2,
+  AlertCircle,
+  Activity,
+  FolderOpen,
+  Bookmark,
+  Volume2,
+} from 'lucide-react';
 import { Header } from './components/Header';
 import { MixerPanel } from './components/MixerPanel';
 import { TouchSoundboard } from './components/TouchSoundboard';
@@ -246,11 +255,13 @@ export const App: React.FC = () => {
 
   return (
     <div 
-      className="min-h-screen flex flex-col bg-rpg-bg text-slate-100 relative"
+      className="min-h-screen flex flex-col bg-rpg-bg text-slate-100 relative isolate"
       onDragOver={handleGlobalDragOver}
       onDragLeave={handleGlobalDragLeave}
       onDrop={handleGlobalDrop}
     >
+      <div className="rpg-ambient -z-10" aria-hidden="true" />
+
       {/* Visual Drag & Drop Overlay */}
       {isDraggingFile && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center pointer-events-none p-6 animate-in fade-in duration-150">
@@ -308,6 +319,66 @@ export const App: React.FC = () => {
         setActiveTab={setActiveTab}
       />
 
+      <section className="relative z-10 hidden max-w-7xl w-full mx-auto px-4 pt-5 sm:block sm:px-6">
+        <div className="rpg-card overflow-hidden p-4 sm:p-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3.5">
+            <div className="relative h-11 w-11 shrink-0 rounded-2xl border border-amber-400/25 bg-gradient-to-br from-amber-400/20 to-amber-600/5 text-amber-300 flex items-center justify-center shadow-glow-gold">
+              <Activity className="w-5 h-5" />
+              {activeCount > 0 && (
+                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-4 ring-[#0c0e14]" />
+              )}
+            </div>
+            <div>
+              <div className="rpg-kicker">Session control</div>
+              <h2 className="mt-1 text-base sm:text-lg font-bold tracking-wide text-white font-rpg">
+                Звуковая сцена
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">
+                {activeCount > 0
+                  ? `${activeCount} ${activeCount === 1 ? 'канал' : 'каналов'} звучит прямо сейчас`
+                  : 'Микшер готов — запустите атмосферу из библиотеки или пресета'}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <Activity className="w-3 h-3 text-emerald-400" />
+                Активны
+              </div>
+              <div className="mt-1 text-lg font-bold text-white font-mono">
+                {activeCount}
+                <span className="text-xs text-slate-500"> / {channels.length || 16}</span>
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <FolderOpen className="w-3 h-3 text-sky-400" />
+                Библиотека
+              </div>
+              <div className="mt-1 text-lg font-bold text-white font-mono">{library.length}</div>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <Bookmark className="w-3 h-3 text-amber-400" />
+                Пресеты
+              </div>
+              <div className="mt-1 text-lg font-bold text-white font-mono">{presets.length}</div>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                <Volume2 className="w-3 h-3 text-purple-400" />
+                Мастер
+              </div>
+              <div className="mt-1 text-lg font-bold text-white font-mono">
+                {isMasterMuted ? 'MUTE' : `${Math.round(masterVolume * 100)}%`}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {isRemote && !hostConnected && (
         <div className="bg-amber-500/15 border-b border-amber-500/40 text-amber-300 text-xs text-center py-2 px-4">
           Ожидание подключения к звуковому движку на ПК. Проверьте, что приложение запущено на компьютере.
@@ -315,44 +386,46 @@ export const App: React.FC = () => {
       )}
 
       {/* Main Content View */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 pb-20 md:pb-6">
-        {activeTab === 'mixer' && (
-          <MixerPanel
-            channels={channels}
-            onSelectTrackForSlot={handleSelectTrackForSlot}
-            onDropTrack={handleDropTrack}
-            library={library}
-          />
-        )}
+      <main className="relative z-10 flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 pb-20 md:pb-8">
+        <div key={activeTab} className="animate-in fade-in slide-in-from-bottom-2 duration-200">
+          {activeTab === 'mixer' && (
+            <MixerPanel
+              channels={channels}
+              onSelectTrackForSlot={handleSelectTrackForSlot}
+              onDropTrack={handleDropTrack}
+              library={library}
+            />
+          )}
 
-        {activeTab === 'soundboard' && (
-          <TouchSoundboard
-            channels={channels}
-            onSelectTrackForSlot={handleSelectTrackForSlot}
-          />
-        )}
+          {activeTab === 'soundboard' && (
+            <TouchSoundboard
+              channels={channels}
+              onSelectTrackForSlot={handleSelectTrackForSlot}
+            />
+          )}
 
-        {activeTab === 'library' && (
-          <LibraryPanel
-            library={library}
-            onRefreshLibrary={fetchLibrary}
-            onOpenYoutubeModal={() => setIsYoutubeModalOpen(true)}
-            onAssignTrackToSlot={handleAssignTrackToSlot}
-            onTrackDeleted={handleTrackDeleted}
-            selectedSlotForAssign={selectedSlotForAssign}
-            setSelectedSlotForAssign={setSelectedSlotForAssign}
-          />
-        )}
+          {activeTab === 'library' && (
+            <LibraryPanel
+              library={library}
+              onRefreshLibrary={fetchLibrary}
+              onOpenYoutubeModal={() => setIsYoutubeModalOpen(true)}
+              onAssignTrackToSlot={handleAssignTrackToSlot}
+              onTrackDeleted={handleTrackDeleted}
+              selectedSlotForAssign={selectedSlotForAssign}
+              setSelectedSlotForAssign={setSelectedSlotForAssign}
+            />
+          )}
 
-        {activeTab === 'presets' && (
-          <PresetPanel
-            presets={presets}
-            channels={channels}
-            library={library}
-            onRefreshPresets={fetchPresets}
-            onApplyPreset={handleApplyPreset}
-          />
-        )}
+          {activeTab === 'presets' && (
+            <PresetPanel
+              presets={presets}
+              channels={channels}
+              library={library}
+              onRefreshPresets={fetchPresets}
+              onApplyPreset={handleApplyPreset}
+            />
+          )}
+        </div>
       </main>
 
       {/* Mobile Bottom Navigation (Visible on Android / Small screens) */}
@@ -363,14 +436,33 @@ export const App: React.FC = () => {
       />
 
       {/* Footer Info (Hidden on mobile to save space) */}
-      <footer className="hidden md:block border-t border-rpg-border/60 py-3 px-4 text-center text-xs text-slate-500 bg-rpg-panel/40">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>Оффлайн движок Web Audio API • 16 одновременных каналов</span>
+      <footer className="relative z-10 hidden md:block border-t border-white/[0.06] py-4 px-4 text-xs text-slate-500 bg-[#0a0d14]/70 backdrop-blur">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-40 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            </span>
+            <span className="text-slate-400">Web Audio API</span>
+            <span className="text-slate-700">•</span>
+            <span>16 каналов</span>
+            <span className="text-slate-700">•</span>
+            <span>оффлайн-движок</span>
           </div>
-          <div className="flex items-center gap-3">
-            <span>Горячие клавиши: <b>1-9</b> старт/пауза • <b>Esc</b> стоп всё • <b>M</b> глушить</span>
+          <div className="flex items-center gap-2">
+            <span className="rpg-kicker text-slate-600">Shortcuts</span>
+            {[
+              ['1–9', 'старт/пауза'],
+              ['Esc', 'стоп всё'],
+              ['M', 'mute'],
+            ].map(([key, label]) => (
+              <span key={key} className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.025] px-2 py-1">
+                <kbd className="rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-amber-300">
+                  {key}
+                </kbd>
+                <span className="text-[11px] text-slate-500">{label}</span>
+              </span>
+            ))}
           </div>
         </div>
       </footer>

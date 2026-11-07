@@ -25,9 +25,17 @@ import yt_dlp
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rpg_music")
 
-# Base paths
-BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR.parent / "frontend" / "dist"
+# Base paths. When packaged with PyInstaller, __file__ points into the
+# temporary extraction directory, so Electron passes the real resource
+# directories via environment variables.
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+BASE_DIR = Path(
+    os.environ.get("RPG_BACKEND_DIR")
+    or (Path(sys.executable).resolve().parent if IS_FROZEN else Path(__file__).resolve().parent)
+)
+STATIC_DIR = Path(
+    os.environ.get("RPG_STATIC_DIR") or (BASE_DIR.parent / "frontend" / "dist")
+)
 
 # Runtime data belongs outside the application bundle. Electron and run.py
 # pass RPG_DATA_DIR so that library files, cookies and presets survive
@@ -910,9 +918,25 @@ async def get_youtube_info(payload: dict):
 def run_yt_download(task_id: str, url: str, custom_title: Optional[str], category: str, tags: List[str], browser: Optional[str] = None):
     """Background worker executing yt_worker in an isolated, cancelable child process."""
     file_id = str(uuid.uuid4())
-    cmd = [
-        sys.executable,
-        str(BASE_DIR / "yt_worker.py"),
+
+    worker_exe = os.environ.get("RPG_YT_WORKER_EXE", "").strip()
+    if worker_exe and Path(worker_exe).is_file():
+        worker_cmd = [worker_exe]
+    elif IS_FROZEN:
+        bundled_worker = BASE_DIR.parent / "backend-dist" / "rpg_yt_worker.exe"
+        if bundled_worker.is_file():
+            worker_cmd = [str(bundled_worker)]
+        else:
+            logger.error(f"Bundled yt_worker not found: {bundled_worker}")
+            download_tasks[task_id] = {
+                "status": "error",
+                "error": "В сборке отсутствует yt_worker.exe. Переустановите приложение.",
+            }
+            return
+    else:
+        worker_cmd = [sys.executable, str(BASE_DIR / "yt_worker.py")]
+
+    cmd = worker_cmd + [
         "--url", url,
         "--file-id", file_id,
         "--library-dir", str(LIBRARY_DIR),

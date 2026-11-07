@@ -49,75 +49,84 @@ export const MixerPanel: React.FC<MixerPanelProps> = ({
     }
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Mixer Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-rpg-panel/60 p-3 rounded-xl border border-rpg-border">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            Отображение:
-          </span>
+  const activeCount = channels.filter((channel) => channel.isPlaying).length;
 
-          <div className="flex bg-slate-900 rounded-lg p-0.5 border border-slate-800 text-xs">
-            <button
-              onClick={() => setBankMode('all')}
-              className={`px-3 py-1 rounded-md font-medium transition-all ${
-                bankMode === 'all'
-                  ? 'bg-amber-500 text-black shadow-sm font-semibold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Все 16 слотов
-            </button>
-            <button
-              onClick={() => setBankMode('bankA')}
-              className={`px-3 py-1 rounded-md font-medium transition-all ${
-                bankMode === 'bankA'
-                  ? 'bg-amber-500 text-black shadow-sm font-semibold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Банк 1-8
-            </button>
-            <button
-              onClick={() => setBankMode('bankB')}
-              className={`px-3 py-1 rounded-md font-medium transition-all ${
-                bankMode === 'bankB'
-                  ? 'bg-amber-500 text-black shadow-sm font-semibold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Банк 9-16
-            </button>
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="rpg-kicker">Live mixer</div>
+          <h2 className="mt-1 flex items-center gap-2.5 text-xl font-bold tracking-wide text-white font-rpg">
+            <LayoutGrid className="h-5 w-5 text-amber-400" />
+            Микшер каналов
+          </h2>
+          <p className="mt-1 text-xs text-slate-400">
+            {activeCount > 0
+              ? `${activeCount} источников играют одновременно`
+              : 'Перетащите звук из библиотеки в свободный слот'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rpg-pill border-emerald-400/20 bg-emerald-400/5 text-emerald-300">
+            <span className={`h-1.5 w-1.5 rounded-full ${activeCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+            {activeCount > 0 ? 'Audio active' : 'Audio idle'}
+          </span>
+          <span className="rpg-pill">16 каналов</span>
+        </div>
+      </div>
+
+      <div className="rpg-card flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="rpg-kicker">Банк</span>
+          <div className="flex rounded-xl border border-white/[0.07] bg-black/25 p-1 text-xs">
+            {[
+              { id: 'all' as const, label: 'Все 16', icon: LayoutGrid },
+              { id: 'bankA' as const, label: '1–8', icon: Layers },
+              { id: 'bankB' as const, label: '9–16', icon: Layers },
+            ].map((bank) => {
+              const Icon = bank.icon;
+              const isActive = bankMode === bank.id;
+              return (
+                <button
+                  key={bank.id}
+                  onClick={() => setBankMode(bank.id)}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-semibold transition-all ${
+                    isActive
+                      ? 'bg-gradient-to-b from-amber-300 to-amber-500 text-[#211906] shadow-sm'
+                      : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {bank.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Quick Utility Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {library.length > 0 && (
             <button
               onClick={handleRandomMix}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all"
-              title="Автоматически собрать атмосферный эмбиент из случайных звуков"
+              className="rpg-btn h-9 border-purple-400/25 bg-purple-500/10 px-3 text-purple-300 hover:border-purple-300/45 hover:bg-purple-500/20 hover:text-purple-200"
+              title="Собрать случайный эмбиент из библиотеки"
             >
-              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <Sparkles className="h-3.5 w-3.5" />
               <span>Случайный эмбиент</span>
             </button>
           )}
-
           <button
             onClick={handleClearAllSlots}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700/60 text-xs transition-all"
+            className="rpg-btn h-9 border-white/[0.06] px-3 text-slate-400 hover:border-red-400/35 hover:bg-red-500/10 hover:text-red-300"
             title="Очистить все слоты"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Очистить микшер</span>
+            <Trash2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Очистить</span>
           </button>
         </div>
       </div>
 
-      {/* 16 Audio Slots Matrix */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {visibleChannels.map((channel) => (
           <SoundSlot
             key={channel.id}

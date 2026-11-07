@@ -17,11 +17,17 @@ let backendToken = crypto.randomBytes(32).toString('base64url');
 function getRootDir() {
   if (app.isPackaged) {
     const resPath = process.resourcesPath;
-    if (fs.existsSync(path.join(resPath, 'backend', 'app.py'))) {
+    if (
+      fs.existsSync(path.join(resPath, 'backend-dist', 'rpg_backend.exe')) ||
+      fs.existsSync(path.join(resPath, 'backend', 'app.py'))
+    ) {
       return resPath;
     }
     const exeDir = path.dirname(process.execPath);
-    if (fs.existsSync(path.join(exeDir, 'backend', 'app.py'))) {
+    if (
+      fs.existsSync(path.join(exeDir, 'backend-dist', 'rpg_backend.exe')) ||
+      fs.existsSync(path.join(exeDir, 'backend', 'app.py'))
+    ) {
       return exeDir;
     }
   }
@@ -30,6 +36,26 @@ function getRootDir() {
 
 const ROOT_DIR = getRootDir();
 const PORT = 8000;
+
+function getBundledBackend() {
+  const candidates = [
+    path.join(ROOT_DIR, 'backend-dist', 'rpg_backend.exe'),
+    path.join(ROOT_DIR, 'backend', 'bin', 'rpg_backend.exe'),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || '';
+}
+
+function getBundledWorker() {
+  const candidates = [
+    path.join(ROOT_DIR, 'backend-dist', 'rpg_yt_worker.exe'),
+    path.join(ROOT_DIR, 'backend', 'bin', 'rpg_yt_worker.exe'),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || '';
+}
+
+function getRuntimeBinDir() {
+  return path.join(ROOT_DIR, 'backend', 'bin');
+}
 
 function getDataDir() {
   return path.join(app.getPath('userData'), 'storage');
@@ -49,7 +75,7 @@ function appendLog(line) {
   backendLogs.push(formatted);
   if (backendLogs.length > 50) backendLogs.shift();
   try {
-    const logPath = path.join(path.dirname(process.execPath), 'backend_startup.log');
+    const logPath = path.join(app.getPath('userData'), 'backend_startup.log');
     fs.appendFileSync(logPath, formatted + '\n');
   } catch (e) {}
   console.log(line);
@@ -147,6 +173,25 @@ async function waitForBackend(port, maxWaitMs = 25000) {
   return false;
 }
 
+function wireBackendProcess(proc) {
+  proc.stdout.on('data', (data) => {
+    appendLog(`[Python]: ${data.toString().trim()}`);
+  });
+
+  proc.stderr.on('data', (data) => {
+    appendLog(`[Python err]: ${data.toString().trim()}`);
+  });
+
+  proc.on('error', (err) => {
+    appendLog(`[Python process error]: ${err.message}`);
+  });
+
+  proc.on('exit', (code, signal) => {
+    appendLog(`[Python exit]: code=${code}, signal=${signal}`);
+    pythonProcess = null;
+  });
+}
+
 function startBackend() {
   return new Promise(async (resolve) => {
     appendLog('Starting backend initialization...');
@@ -174,10 +219,69 @@ function startBackend() {
       backendToken = crypto.randomBytes(32).toString('base64url');
     }
 
-    const pyExe = findPython();
     const backendDir = path.join(ROOT_DIR, 'backend');
     const appPy = path.join(backendDir, 'app.py');
+    const binDir = getRuntimeBinDir();
+    const bundledBackend = getBundledBackend();
+    const bundledWorker = getBundledWorker();
 
+    try {
+      fs.mkdirSync(backendDir, { recursive: true });
+    } catch (e) {}
+
+    let envPath = process.env.PATH || '';
+    if (fs.existsSync(binDir)) {
+      envPath = `${binDir};${envPath}`;
+    }
+
+    const baseEnv = {
+      ...process.env,
+      PORT: String(PORT),
+      PATH: envPath,
+      RPG_DATA_DIR: getDataDir(),
+      RPG_API_TOKEN: backendToken,
+      RPG_BACKEND_DIR: backendDir,
+      RPG_STATIC_DIR: path.join(ROOT_DIR, 'frontend', 'dist')
+    };
+    if (bundledWorker) {
+      baseEnv.RPG_YT_WORKER_EXE = bundledWorker;
+    }
+
+    if (bundledBackend) {
+      appendLog(`Spawning bundled backend: "${bundledBackend}" in cwd: "${backendDir}"`);
+      try {
+        pythonProcess = spawn(bundledBackend, [], {
+          cwd: backendDir,
+          env: baseEnv,
+          stdio: 'pipe',
+          windowsHide: true
+        });
+      } catch (spawnErr) {
+        appendLog(`Bundled backend spawn exception: ${spawnErr.message}`);
+        dialog.showErrorBox(
+          'Ошибка запуска встроенного сервера',
+          `Не удалось запустить встроенный backend:\n${spawnErr.message}`
+        );
+        return resolve(false);
+      }
+
+      wireBackendProcess(pythonProcess);
+      const isReady = await waitForBackend(PORT, 60000);
+      appendLog(`Bundled backend ready status after wait: ${isReady}`);
+
+      if (!isReady) {
+        const logDump = backendLogs.slice(-25).join('\n');
+        dialog.showErrorBox(
+          'Ошибка запуска бэкенда',
+          `Не удалось подключиться к встроенному серверу на порту ${PORT}.\n\n` +
+          `Файл: ${bundledBackend}\n\n` +
+          `Журнал вывода:\n${logDump || 'Нет вывода'}`
+        );
+      }
+      return resolve(isReady);
+    }
+
+    const pyExe = findPython();
     if (!fs.existsSync(appPy)) {
       appendLog(`ERROR: Backend entry script not found: ${appPy}`);
       dialog.showErrorBox(
@@ -187,9 +291,8 @@ function startBackend() {
       return resolve(false);
     }
 
-    // Set up PATH including Python Scripts and Conda Library/bin if available
+    // Development fallback: use the detected Python installation.
     const pyDir = pyExe.includes('\\') ? path.dirname(pyExe) : '';
-    let envPath = process.env.PATH || '';
     if (pyDir) {
       const condaBins = [
         pyDir,
@@ -201,20 +304,18 @@ function startBackend() {
     }
 
     appendLog(`Spawning Python process: "${pyExe}" "${appPy}" in cwd: "${backendDir}"`);
-    
+
     try {
       pythonProcess = spawn(pyExe, [appPy], {
         cwd: backendDir,
         env: {
-          ...process.env,
-          PORT: String(PORT),
+          ...baseEnv,
           PATH: envPath,
           PYTHONPATH: backendDir,
-          PYTHONUNBUFFERED: '1',
-          RPG_DATA_DIR: getDataDir(),
-          RPG_API_TOKEN: backendToken
+          PYTHONUNBUFFERED: '1'
         },
         stdio: 'pipe',
+        windowsHide: true
       });
     } catch (spawnErr) {
       appendLog(`Spawn exception: ${spawnErr.message}`);
@@ -222,31 +323,15 @@ function startBackend() {
       return resolve(false);
     }
 
-    pythonProcess.stdout.on('data', (data) => {
-      appendLog(`[Python]: ${data.toString().trim()}`);
-    });
-
-    pythonProcess.stderr.on('data', (data) => {
-      appendLog(`[Python err]: ${data.toString().trim()}`);
-    });
-
-    pythonProcess.on('error', (err) => {
-      appendLog(`[Python process error]: ${err.message}`);
-    });
-
-    pythonProcess.on('exit', (code, signal) => {
-      appendLog(`[Python exit]: code=${code}, signal=${signal}`);
-      pythonProcess = null;
-    });
-
-    const isReady = await waitForBackend(PORT, 25000);
+    wireBackendProcess(pythonProcess);
+    const isReady = await waitForBackend(PORT, 60000);
     appendLog(`Backend ready status after wait: ${isReady}`);
-    
+
     if (!isReady) {
-      const logDump = backendLogs.slice(-20).join('\n');
+      const logDump = backendLogs.slice(-25).join('\n');
       dialog.showErrorBox(
         'Ошибка запуска бэкенда',
-        `Не удалось подключиться к локальному аудио-серверу на порту ${PORT} за 25 секунд.\n\n` +
+        `Не удалось подключиться к локальному аудио-серверу на порту ${PORT}.\n\n` +
         `Python: ${pyExe}\n` +
         `Скрипт: ${appPy}\n\n` +
         `Журнал вывода:\n${logDump || 'Нет вывода'}`

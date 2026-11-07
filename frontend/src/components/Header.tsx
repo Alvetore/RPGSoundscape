@@ -8,7 +8,9 @@ import {
   SlidersHorizontal,
   Bookmark, 
   FolderPlus,
-  Grid
+  Grid,
+  Swords,
+  Activity,
 } from 'lucide-react';
 import { YoutubeIcon } from './Icons';
 import { getSoundEngine } from '../audio/SoundEngine';
@@ -40,6 +42,13 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const engine = getSoundEngine();
 
+  const tabs = [
+    { id: 'mixer' as const, label: 'Микшер', icon: SlidersHorizontal },
+    { id: 'soundboard' as const, label: 'Тачпад', icon: Grid },
+    { id: 'library' as const, label: 'Библиотека', icon: FolderPlus },
+    { id: 'presets' as const, label: 'Сцены', icon: Bookmark },
+  ];
+
   const handleStopAll = () => {
     engine.stopAll(1.2);
   };
@@ -49,168 +58,134 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-rpg-panel/90 backdrop-blur-md border-b border-rpg-border px-4 py-3 shadow-lg">
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-        
-        {/* Brand & Status */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center shadow-glow-gold text-white font-bold text-xl select-none">
-              ⚔️
+    <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-[#090c13]/85 px-4 py-3 shadow-[0_18px_50px_-30px_rgba(0,0,0,1)] backdrop-blur-xl">
+      <div className="max-w-7xl mx-auto flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber-300/35 bg-gradient-to-br from-amber-300 via-amber-500 to-amber-700 text-[#241b05] shadow-glow-gold">
+              <Swords className="h-5 w-5" />
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-4 ring-[#090c13]" />
             </div>
-            <div>
-              <h1 className="text-lg md:text-xl font-bold tracking-wider text-amber-400 font-rpg drop-shadow-sm flex items-center gap-2">
-                RPG SOUNDSCAPE
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-sans border border-amber-500/30 font-medium">
-                  16ch Studio
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="truncate text-lg font-bold tracking-[0.08em] text-white font-rpg sm:text-xl">
+                  RPG Soundscape
+                </h1>
+                <span className="hidden rounded-md border border-amber-400/25 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-amber-300 sm:inline">
+                  16ch
                 </span>
-              </h1>
-              <p className="text-xs text-slate-400">Звуки & Музыка для Настольных Ролевых Игр</p>
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
+                <span className={`inline-flex items-center gap-1.5 ${activeCount > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${activeCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+                  {activeCount > 0 ? `${activeCount} активно` : 'Тишина в эфире'}
+                </span>
+                <span className="text-slate-700">/</span>
+                <span>{totalChannels} каналов</span>
+              </div>
             </div>
           </div>
 
-          <div className="md:hidden flex items-center gap-2">
-            <span className={`text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1.5 ${
-              activeCount > 0 
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse' 
-                : 'bg-slate-800 text-slate-400 border border-slate-700'
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${activeCount > 0 ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-              {activeCount} / {totalChannels}
-            </span>
-          </div>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 bg-rpg-bg/80 p-1 rounded-xl border border-rpg-border w-full md:w-auto justify-center">
-          <button
-            onClick={() => setActiveTab('mixer')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'mixer'
-                ? 'bg-amber-500 text-black shadow-glow-gold font-semibold'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            <span>Микшер</span>
-            {activeCount > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 text-[11px] rounded-full bg-black/30 text-white font-bold">
-                {activeCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('soundboard')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'soundboard'
-                ? 'bg-amber-500 text-black shadow-glow-gold font-semibold'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Grid className="w-4 h-4" />
-            <span>Тачпад</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('library')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'library'
-                ? 'bg-amber-500 text-black shadow-glow-gold font-semibold'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <FolderPlus className="w-4 h-4" />
-            <span>Библиотека</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('presets')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'presets'
-                ? 'bg-amber-500 text-black shadow-glow-gold font-semibold'
-                : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Bookmark className="w-4 h-4" />
-            <span>Пресеты сцен</span>
-          </button>
-        </div>
-
-        {/* Master Controls & Actions */}
-        <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-          
-          {/* Quick Global Audio Actions */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={handlePlayAll}
-              title="Запустить все загруженные звуки"
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/60 text-xs font-semibold flex items-center gap-1 transition-all"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span className="hidden sm:inline">Старт</span>
-            </button>
-
-            <button
-              onClick={handleStopAll}
-              title="Плавная остановка всех каналов (Fade out)"
-              className="px-2.5 py-1.5 rounded-lg bg-crimson/20 hover:bg-crimson/30 text-red-400 border border-red-500/30 hover:border-red-500/60 text-xs font-semibold flex items-center gap-1 transition-all shadow-sm"
-            >
-              <Square className="w-3.5 h-3.5 fill-current" />
-              <span>Стоп всё</span>
-            </button>
-          </div>
-
-          {/* Master Volume Slider */}
-          <div className="flex items-center gap-2 bg-rpg-surface px-3 py-1.5 rounded-xl border border-rpg-border">
-            <button
-              onClick={onToggleMasterMute}
-              title={isMasterMuted ? "Включить звук" : "Заглушить мастер"}
-              className="text-slate-300 hover:text-amber-400 transition-colors"
-            >
-              {isMasterMuted ? (
-                <VolumeX className="w-4 h-4 text-red-400" />
-              ) : (
-                <Volume2 className="w-4 h-4 text-amber-400" />
-              )}
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={isMasterMuted ? 0 : masterVolume}
-              onChange={(e) => onMasterVolumeChange(parseFloat(e.target.value))}
-              className="w-20 sm:w-28 accent-amber-500 h-1.5"
-            />
-            <span className="text-xs font-mono text-slate-300 w-8 text-right">
-              {Math.round((isMasterMuted ? 0 : masterVolume) * 100)}%
-            </span>
-          </div>
-
-          {/* Utility Modals */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={onOpenYoutubeModal}
-              title="Скачать музыку с YouTube в оффлайн"
-              className="p-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 hover:border-red-500/60 transition-all flex items-center gap-1.5 text-xs font-semibold"
-            >
-              <YoutubeIcon className="w-4 h-4 text-red-400" />
-              <span className="hidden xl:inline">YouTube</span>
-            </button>
-
+            <div className="hidden items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-1.5 lg:flex">
+              <Activity className="h-3.5 w-3.5 text-amber-400" />
+              <span className="rpg-kicker text-slate-500">Master</span>
+              <span className="font-mono text-xs font-semibold text-slate-200">
+                {isMasterMuted ? 'MUTE' : `${Math.round(masterVolume * 100)}%`}
+              </span>
+            </div>
             <button
               onClick={onOpenMobileModal}
               title="Подключить Android / Планшет по Wi-Fi"
-              className="p-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-400 border border-sky-500/30 hover:border-sky-500/60 transition-all flex items-center gap-1.5 text-xs font-semibold"
+              className="rpg-btn h-9 px-3 text-sky-300 hover:border-sky-400/40 hover:text-sky-200"
             >
-              <Smartphone className="w-4 h-4 text-sky-400" />
+              <Smartphone className="h-4 w-4" />
               <span className="hidden xl:inline">Android</span>
             </button>
+            <button
+              onClick={onOpenYoutubeModal}
+              title="Скачать музыку с YouTube"
+              className="rpg-btn h-9 border-red-500/25 bg-red-500/10 px-3 text-red-300 hover:border-red-400/50 hover:bg-red-500/20 hover:text-red-200"
+            >
+              <YoutubeIcon className="h-4 w-4" />
+              <span className="hidden xl:inline">YouTube</span>
+            </button>
           </div>
-
         </div>
 
+        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+          <nav className="hidden w-full items-center gap-1 overflow-x-auto rounded-2xl border border-white/[0.07] bg-black/25 p-1 scrollbar-none md:flex lg:w-auto">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`group relative flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all sm:text-sm ${
+                    isActive
+                      ? 'bg-gradient-to-b from-amber-300 to-amber-500 text-[#221a06] shadow-[0_8px_24px_-14px_rgba(234,179,8,0.85)]'
+                      : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-100'
+                  }`}
+                >
+                  <Icon className={`h-4 w-4 ${isActive ? 'text-[#221a06]' : 'text-slate-500 group-hover:text-amber-300'}`} />
+                  <span>{tab.label}</span>
+                  {tab.id === 'mixer' && activeCount > 0 && (
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${isActive ? 'bg-black/20 text-black' : 'bg-amber-400/15 text-amber-300'}`}>
+                      {activeCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePlayAll}
+              title="Запустить все загруженные звуки"
+              className="rpg-btn h-9 flex-1 px-3 text-emerald-300 hover:border-emerald-400/40 hover:text-emerald-200 sm:flex-none"
+            >
+              <Play className="h-3.5 w-3.5 fill-current" />
+              <span>Старт</span>
+            </button>
+            <button
+              onClick={handleStopAll}
+              title="Плавно остановить все каналы"
+              className="rpg-btn h-9 flex-1 border-red-500/25 bg-red-500/10 px-3 text-red-300 hover:border-red-400/50 hover:bg-red-500/20 hover:text-red-200 sm:flex-none"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+              <span className="whitespace-nowrap">Стоп всё</span>
+            </button>
+
+            <div className="flex h-9 min-w-[9.5rem] flex-1 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.025] px-3 sm:flex-none">
+              <button
+                onClick={onToggleMasterMute}
+                title={isMasterMuted ? 'Включить звук' : 'Заглушить мастер'}
+                className="text-slate-400 transition-colors hover:text-amber-300"
+              >
+                {isMasterMuted ? (
+                  <VolumeX className="h-4 w-4 text-red-400" />
+                ) : (
+                  <Volume2 className="h-4 w-4 text-amber-300" />
+                )}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={isMasterMuted ? 0 : masterVolume}
+                onChange={(e) => onMasterVolumeChange(parseFloat(e.target.value))}
+                className="w-full min-w-16 sm:w-24"
+                aria-label="Общая громкость"
+              />
+              <span className="w-8 shrink-0 text-right font-mono text-[11px] text-slate-400">
+                {Math.round((isMasterMuted ? 0 : masterVolume) * 100)}%
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
   );

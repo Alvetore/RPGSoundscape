@@ -13,6 +13,7 @@ import {
   Tag, 
   CheckCircle2, 
   FileAudio,
+  FolderPlus,
   GripVertical
 } from 'lucide-react';
 import { YoutubeIcon } from './Icons';
@@ -169,24 +170,39 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Top Banner & Actions */}
-      <div className="bg-rpg-panel p-4 rounded-xl border border-rpg-border flex flex-col md:flex-row items-center justify-between gap-4">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-slate-100 font-rpg flex items-center gap-2">
-            <FileAudio className="w-5 h-5 text-amber-400" />
-            Библиотека Звуков & Музыки
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-sans font-normal border border-slate-700">
-              {library.length} аудиофайлов оффлайн
-            </span>
+          <div className="rpg-kicker">Sound library</div>
+          <h2 className="mt-1 flex items-center gap-2.5 text-xl font-bold tracking-wide text-white font-rpg">
+            <FileAudio className="h-5 w-5 text-amber-400" />
+            Библиотека звуков
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Все звуки хранятся локально на диске и воспроизводятся без доступа к интернету.
+          <p className="mt-1 text-xs text-slate-400">
+            Локальные треки, эмбиент и SFX — всё доступно без интернета
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rpg-pill">{filteredTracks.length} из {library.length}</span>
+          <span className="rpg-pill border-emerald-400/20 text-emerald-300">
+            <CheckCircle2 className="h-3 w-3" />
+            Offline
+          </span>
+        </div>
+      </div>
+
+      <div className="rpg-card flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+            <FolderPlus className="h-4 w-4 text-amber-400" />
+            Пополнить библиотеку
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Загрузите файлы с диска или скачайте трек с YouTube.
           </p>
         </div>
 
-        {/* Upload & YouTube buttons */}
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex w-full items-center gap-2 md:w-auto">
           <input
             type="file"
             ref={fileInputRef}
@@ -198,17 +214,17 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-            className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all shadow-sm"
+            className="rpg-btn h-10 flex-1 px-3.5 text-slate-200 md:flex-none"
           >
-            <Upload className="w-4 h-4 text-amber-400" />
-            <span>{isUploading ? 'Загрузка...' : 'Добавить аудиофайлы'}</span>
+            <Upload className="h-4 w-4 text-amber-300" />
+            <span>{isUploading ? 'Загрузка...' : 'Добавить файлы'}</span>
           </button>
 
           <button
             onClick={onOpenYoutubeModal}
-            className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold transition-all shadow-glow-crimson"
+            className="rpg-btn h-10 flex-1 border-red-500/30 bg-red-500/10 px-3.5 text-red-200 hover:border-red-400/50 hover:bg-red-500/20 md:flex-none"
           >
-            <YoutubeIcon className="w-4 h-4 fill-current" />
+            <YoutubeIcon className="h-4 w-4 fill-current" />
             <span>Скачать с YouTube</span>
           </button>
         </div>
@@ -235,13 +251,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       {/* Search and Category Filters */}
       <div className="space-y-3">
         <div className="relative">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Поиск по названию, тегу или категории..."
-            className="w-full bg-rpg-panel border border-rpg-border rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
+            className="rpg-input py-3 pl-10 pr-4 text-sm"
           />
         </div>
 
@@ -251,10 +267,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all border ${
+              className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
                 selectedCategory === cat.id
-                  ? 'bg-amber-500 text-black border-amber-500 font-semibold shadow-glow-gold'
-                  : 'bg-rpg-panel text-slate-400 border-rpg-border hover:text-slate-200 hover:border-slate-600'
+                  ? 'border-amber-300/50 bg-gradient-to-b from-amber-300 to-amber-500 text-[#211906] shadow-[0_6px_18px_-12px_rgba(234,179,8,0.8)]'
+                  : 'border-white/[0.06] bg-white/[0.025] text-slate-400 hover:border-white/15 hover:text-slate-200'
               }`}
             >
               {cat.label}
@@ -264,7 +280,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
       </div>
 
       {/* Tracks List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {filteredTracks.map((track) => {
           const isPreviewing = previewTrackId === track.id;
 
@@ -275,25 +291,27 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
               onDragStart={(e) => {
                 e.dataTransfer.setData('application/json', JSON.stringify(track));
               }}
-              className="bg-rpg-panel hover:bg-slate-900/90 border border-rpg-border hover:border-amber-500/50 p-3.5 rounded-xl transition-all flex flex-col justify-between group shadow-sm cursor-grab active:cursor-grabbing"
+              className="rpg-card rpg-card-hover group flex cursor-grab flex-col justify-between p-4 active:cursor-grabbing"
             >
               <div>
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <GripVertical className="w-4 h-4 text-slate-600 group-hover:text-amber-400 transition-colors shrink-0" />
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-black/20 text-slate-500 transition-colors group-hover:text-amber-300">
+                      <GripVertical className="h-3.5 w-3.5" />
+                    </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-slate-200 truncate" title={track.title}>
+                      <h3 className="truncate text-sm font-semibold text-slate-100" title={track.title}>
                         {track.title}
                       </h3>
-                      <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                        <span className="px-1.5 py-0.2 rounded bg-slate-800 text-amber-400/90 border border-slate-700">
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                        <span className="rounded-md border border-amber-400/20 bg-amber-400/10 px-1.5 py-0.5 font-medium text-amber-300/90">
                           {track.category}
                         </span>
                         {track.filesize > 0 && (
-                          <span>{formatFileSize(track.filesize)}</span>
+                          <span className="font-mono">{formatFileSize(track.filesize)}</span>
                         )}
-                        <span className="flex items-center gap-1 text-emerald-400 text-[10px]">
-                          <CheckCircle2 className="w-3 h-3" /> Оффлайн
+                        <span className="inline-flex items-center gap-1 text-emerald-400/80">
+                          <CheckCircle2 className="h-3 w-3" /> offline
                         </span>
                       </div>
                     </div>
@@ -303,17 +321,16 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                   <button
                     onClick={() => handleDeleteTrack(track)}
                     title="Удалить из библиотеки"
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400 transition-all"
+                    className="rounded-md p-1.5 text-slate-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
 
-                {/* Tags */}
                 {track.tags && track.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2.5">
-                    {track.tags.map((t, idx) => (
-                      <span key={idx} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {track.tags.slice(0, 5).map((t, idx) => (
+                      <span key={idx} className="rounded-md border border-white/[0.04] bg-white/[0.025] px-1.5 py-0.5 text-[10px] text-slate-500">
                         #{t}
                       </span>
                     ))}
@@ -321,44 +338,43 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                 )}
               </div>
 
-              {/* Actions Footer: Preview & Slot Assign */}
-              <div className="flex items-center justify-between gap-2 pt-3 mt-3 border-t border-slate-800/80">
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-white/[0.055] pt-3">
                 <button
                   onClick={() => handleTogglePreview(track)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  className={`rpg-btn h-8 px-3 text-xs ${
                     isPreviewing
-                      ? 'bg-amber-500 text-black font-semibold shadow-glow-gold'
-                      : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                      ? 'border-amber-300/50 bg-amber-400/15 text-amber-200'
+                      : 'text-slate-300'
                   }`}
                   title="Прослушать звук (Preview)"
                 >
                   {isPreviewing ? (
                     <>
-                      <Pause className="w-3.5 h-3.5 fill-current" />
+                      <Pause className="h-3.5 w-3.5 fill-current" />
                       <span>Пауза</span>
                     </>
                   ) : (
                     <>
-                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <Play className="h-3.5 w-3.5 fill-current" />
                       <span>Слушать</span>
                     </>
                   )}
                 </button>
 
-                {/* Quick Add to Slot */}
                 {selectedSlotForAssign !== null ? (
                   <button
                     onClick={() => {
                       onAssignTrackToSlot(track, selectedSlotForAssign);
                       setSelectedSlotForAssign(null);
                     }}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 text-black text-xs font-bold hover:bg-emerald-400 transition-all shadow-sm"
+                    className="rpg-btn h-8 border-emerald-400/40 bg-emerald-400/15 px-2.5 text-[11px] text-emerald-200"
                   >
-                    <span>Выбрать в слот #{selectedSlotForAssign + 1}</span>
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>В слот #{selectedSlotForAssign + 1}</span>
                   </button>
                 ) : (
                   <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-slate-500 hidden sm:inline">В слот:</span>
+                    <span className="hidden text-[10px] text-slate-600 sm:inline">В слот</span>
                     <select
                       onChange={(e) => {
                         const val = parseInt(e.target.value, 10);
@@ -368,7 +384,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
                         }
                       }}
                       defaultValue=""
-                      className="bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 py-1 px-2 focus:outline-none focus:border-amber-500 cursor-pointer"
+                      className="cursor-pointer rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1.5 text-[11px] text-slate-300 focus:border-amber-300/50 focus:outline-none"
                     >
                       <option value="" disabled>
                         + Слот #
@@ -387,11 +403,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         })}
 
         {filteredTracks.length === 0 && (
-          <div className="col-span-full py-12 text-center text-slate-500 space-y-3">
-            <FileAudio className="w-12 h-12 mx-auto text-slate-600" />
-            <p className="text-sm">Звуки по запросу не найдены.</p>
-            <p className="text-xs text-slate-600">
-              Вы можете скачать музыку с YouTube или загрузить собственные MP3/WAV файлы с помощью кнопок сверху.
+          <div className="rpg-card col-span-full flex flex-col items-center justify-center px-6 py-14 text-center">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.025] text-slate-600">
+              <FileAudio className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-semibold text-slate-300">Звуки не найдены</p>
+            <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-600">
+              Измените фильтр или добавьте музыку с YouTube/диска — она сразу появится в оффлайн-библиотеке.
             </p>
           </div>
         )}

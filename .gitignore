@@ -5,6 +5,11 @@ frontend/node_modules/
 # Electron / build outputs
 release/
 frontend/dist/
+backend-dist/
+build/
+backend/bin/*.exe
+backend/bin/*.dll
+backend/bin/THIRD_PARTY_NOTICES.txt
 *.lnk
 
 # Python cache

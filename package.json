@@ -5,9 +5,11 @@
   "main": "electron/main.cjs",
   "scripts": {
     "start": "electron electron/main.cjs",
+    "prepare:runtime": "py -3.14 scripts\\prepare_runtime.py",
+    "build:backend": "py -3.14 scripts\\build_backend.py",
     "build:frontend": "cd frontend && npm run build",
-    "dist": "npm run build:frontend && electron-builder --win",
-    "pack": "npm run build:frontend && electron-builder --dir"
+    "dist": "npm run prepare:runtime && npm run build:backend && npm run build:frontend && electron-builder --win",
+    "pack": "npm run prepare:runtime && npm run build:backend && npm run build:frontend && electron-builder --dir"
   },
   "repository": {
     "type": "git",
@@ -34,6 +36,12 @@
     "win": {
       "target": [
         {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
           "target": "portable",
           "arch": [
             "x64"
@@ -46,20 +54,33 @@
           ]
         }
       ],
-      "icon": "icon.ico"
+      "icon": "icon.ico",
+      "artifactName": "RPGSoundscape-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RPG Soundscape Studio",
+      "artifactName": "RPGSoundscape-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "RPGSoundscape-Portable-${version}.${ext}"
     },
     "extraResources": [
       {
-        "from": "backend",
-        "to": "backend",
-        "filter": [
-          "**/*",
-          "!data/**",
-          "!__pycache__/**",
-          "!tests/**",
-          "!requirements-dev.txt",
-          "!*.pyc"
-        ]
+        "from": "backend-dist",
+        "to": "backend-dist"
+      },
+      {
+        "from": "backend/audio_library",
+        "to": "backend/audio_library"
+      },
+      {
+        "from": "backend/bin",
+        "to": "backend/bin"
       },
       {
         "from": "frontend/dist",

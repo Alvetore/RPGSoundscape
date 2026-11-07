@@ -1,0 +1,42 @@
+RPG Soundscape Studio — third-party notices
+==========================================
+
+This distribution includes or bundles the following components:
+
+- Electron and Chromium — MIT License / Chromium licenses.
+  https://github.com/electron/electron
+  https://www.chromium.org/Home/chromium-security/
+
+- Python — Python Software Foundation License.
+  https://www.python.org/psf/license/
+
+- PyInstaller — GPL-2.0-or-later with a special exception for bundled applications.
+  https://pyinstaller.org/en/stable/license.html
+
+- FastAPI, Starlette, Pydantic, Uvicorn — MIT / BSD licenses.
+  https://fastapi.tiangolo.com/
+  https://www.starlette.io/
+  https://docs.pydantic.dev/
+  https://www.uvicorn.org/
+
+- yt-dlp — The Unlicense.
+  https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE
+
+- yt-dlp-ejs — MIT License.
+  https://github.com/yt-dlp/ejs
+
+- FFmpeg — the bundled ffmpeg.exe is the GPL build from gyan.dev (ffmpeg 9.0.2 essentials).
+  FFmpeg is licensed under the GNU General Public License / GNU Lesser General Public License
+  depending on the build and included libraries.
+  https://ffmpeg.org/legal.html
+  https://www.gyan.dev/ffmpeg/builds/
+
+- Node.js — MIT License.
+  https://nodejs.org/en/about/previous-releases
+
+- cobalt API fallback — public community instances. The application only sends the public
+  video URL to the fallback instance; no cookies or local library data are sent.
+
+If you redistribute this application, keep this file with the distribution and comply with
+the licenses above. Source code for the project is available at:
+https://github.com/Alvetore/RPGSoundscape
