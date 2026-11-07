@@ -3,9 +3,11 @@ import os
 import json
 import argparse
 import logging
+import re
 import shutil
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -21,6 +23,10 @@ DEFAULT_COBALT_APIS = ("https://rue-cobalt.xenon.zone",)
 DEFAULT_PROXIES = (
     "http://102.244.78.61:8085",
     "http://206.135.47.110:999",
+)
+PROXY_LIST_SOURCES = (
+    "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all",
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
 )
 MAX_DOWNLOAD_BYTES = int(os.environ.get("RPG_MAX_DOWNLOAD_MB", "500")) * 1024 * 1024
 USER_AGENT = (
@@ -52,6 +58,58 @@ def get_proxies():
     if raw:
         return [item.strip() for item in raw.split(",") if item.strip()]
     return list(DEFAULT_PROXIES)
+
+
+def dynamic_proxies_enabled() -> bool:
+    return os.environ.get("RPG_YTDL_DYNAMIC_PROXIES", "1").strip().lower() not in (
+        "0",
+        "off",
+        "none",
+        "false",
+    )
+
+
+def collect_dynamic_proxies() -> list:
+    """Fetch a fresh free-proxy list and keep hosts that reach YouTube."""
+    candidates = []
+    for source in PROXY_LIST_SOURCES:
+        try:
+            request = urllib.request.Request(
+                source,
+                headers={"User-Agent": USER_AGENT},
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                text = response.read().decode("utf-8", errors="ignore")
+            found = re.findall(r"(?:\d{1,3}\.){3}\d{1,3}:\d{2,5}", text)
+            candidates.extend(found[:250])
+        except Exception as exc:
+            logging.debug("proxy list source failed: %s", exc)
+
+    candidates = list(dict.fromkeys(candidates))[:500]
+
+    def reachable(proxy: str) -> str:
+        proxy_url = f"http://{proxy}"
+        try:
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+            )
+            with opener.open(
+                "https://www.youtube.com/generate_204", timeout=6
+            ) as response:
+                if response.status in (200, 204):
+                    return proxy
+        except Exception:
+            return ""
+        return ""
+
+    working = []
+    with ThreadPoolExecutor(max_workers=50) as pool:
+        futures = [pool.submit(reachable, proxy) for proxy in candidates]
+        for future in as_completed(futures):
+            proxy = future.result()
+            if proxy:
+                working.append(proxy)
+    return working[:12]
 
 
 def is_youtube_url(url: str) -> bool:
@@ -196,10 +254,14 @@ def download_via_proxies(
     category: str,
     tags: list,
     base_opts: dict,
+    proxies: list = None,
 ) -> dict:
     """Last-resort retry through best-effort HTTP proxies without cookies."""
+    candidates = proxies if proxies is not None else get_proxies()
     errors = []
-    for proxy in get_proxies():
+    for proxy in candidates:
+        if not re.match(r"^(?:http|https|socks5h?)://", proxy):
+            proxy = f"http://{proxy}"
         for partial in library_dir.glob(f"{file_id}.*"):
             try:
                 partial.unlink(missing_ok=True)
@@ -385,22 +447,53 @@ def main():
 
     # Last resort: retry through best-effort public proxies, WITHOUT sending
     # the user's YouTube cookies through them.
-    if is_youtube_url(args.url) and get_proxies():
-        emit(status="downloading", percent=0, fallback="proxy")
-        try:
-            result = download_via_proxies(
-                args.url,
-                args.file_id,
-                library_dir,
-                args.title,
-                args.category,
-                tag_list,
-                opts,
-            )
-            print(f"RPGSUCCESS:{json.dumps(result)}", flush=True)
-            return
-        except Exception as proxy_error:
-            ytdlp_error = Exception(f"{ytdlp_error}; Proxy fallback: {proxy_error}")
+    if is_youtube_url(args.url):
+        static_proxies = get_proxies()
+        if static_proxies:
+            emit(status="downloading", percent=0, fallback="proxy")
+            try:
+                result = download_via_proxies(
+                    args.url,
+                    args.file_id,
+                    library_dir,
+                    args.title,
+                    args.category,
+                    tag_list,
+                    opts,
+                    proxies=static_proxies,
+                )
+                print(f"RPGSUCCESS:{json.dumps(result)}", flush=True)
+                return
+            except Exception as proxy_error:
+                ytdlp_error = Exception(f"{ytdlp_error}; Proxy fallback: {proxy_error}")
+
+        # Static proxies are often rate-limited. Discover a fresh pool and
+        # retry; cookies are still kept local.
+        if dynamic_proxies_enabled():
+            emit(status="downloading", percent=0, fallback="proxy-discovery")
+            dynamic_proxies = collect_dynamic_proxies()
+            if dynamic_proxies:
+                try:
+                    result = download_via_proxies(
+                        args.url,
+                        args.file_id,
+                        library_dir,
+                        args.title,
+                        args.category,
+                        tag_list,
+                        opts,
+                        proxies=dynamic_proxies,
+                    )
+                    print(f"RPGSUCCESS:{json.dumps(result)}", flush=True)
+                    return
+                except Exception as proxy_error:
+                    ytdlp_error = Exception(
+                        f"{ytdlp_error}; Dynamic proxy fallback: {proxy_error}"
+                    )
+            else:
+                ytdlp_error = Exception(
+                    f"{ytdlp_error}; Dynamic proxy discovery found no reachable proxies"
+                )
 
     print(f"RPGERROR:{ytdlp_error}", flush=True)
     for partial in library_dir.glob(f"{args.file_id}.*"):

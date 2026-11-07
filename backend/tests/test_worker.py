@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from yt_worker import (
     extract_cobalt_media_url,
+    dynamic_proxies_enabled,
     get_cobalt_apis,
     get_proxies,
     is_safe_media_url,
@@ -53,3 +54,10 @@ def test_proxies_can_be_overridden(monkeypatch):
 def test_proxies_can_be_disabled(monkeypatch):
     monkeypatch.setenv("RPG_YTDL_PROXIES", "0")
     assert get_proxies() == []
+
+
+def test_dynamic_proxy_discovery_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("RPG_YTDL_DYNAMIC_PROXIES", "0")
+    assert dynamic_proxies_enabled() is False
+    monkeypatch.setenv("RPG_YTDL_DYNAMIC_PROXIES", "1")
+    assert dynamic_proxies_enabled() is True
