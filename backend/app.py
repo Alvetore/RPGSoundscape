@@ -5,6 +5,7 @@ import uuid
 import socket
 import asyncio
 import logging
+import subprocess
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from datetime import datetime
@@ -45,6 +46,17 @@ app.add_middleware(
 
 # Active download tasks dictionary: task_id -> status dict
 download_tasks: Dict[str, Dict[str, Any]] = {}
+active_download_processes: Dict[str, subprocess.Popen] = {}
+
+def kill_process_tree(pid: int):
+    """Instantly kills a process and all its children across Windows/Linux."""
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/pid", str(pid), "/f", "/t"], capture_output=True, timeout=2)
+        else:
+            os.kill(pid, 9)
+    except Exception as e:
+        logger.warning(f"Error terminating process {pid}: {e}")
 
 def get_local_ip() -> str:
     """Detect LAN IP address for cross-device / Android connection."""
@@ -175,6 +187,7 @@ def build_ydl_opts(for_download: bool = False, custom_browser: Optional[str] = N
     opts: Dict[str, Any] = {
         'quiet': True,
         'no_warnings': True,
+        'socket_timeout': 12,
     }
 
     # 1. Cookie file check (cookies.txt)
@@ -221,6 +234,13 @@ def translate_yt_error(err_str: str) -> str:
         )
     elif "video unavailable" in lower:
         return "Данное видео недоступно на YouTube (удалено, заблокировано в регионе или является приватным)."
+    elif "could not copy chrome cookie database" in lower or "database is locked" in lower or "failed to decrypt with dpapi" in lower:
+        return (
+            "Браузер защитил свою базу cookies (защита App-Bound Encryption или база заблокирована открытым браузером). "
+            "Пожалуйста, экспортируйте файл cookies.txt в 1 клик через расширение и загрузите его во вкладке 'Настройки Cookies'."
+        )
+    elif "timed out" in lower or "timeout" in lower:
+        return "Превышено время ожидания ответа от сервера YouTube или браузера. Попробуйте ещё раз."
     elif "failed to decrypt with dpapi" in lower:
         return (
             "Браузер защитил cookies системным шифрованием Windows DPAPI. "
@@ -469,88 +489,120 @@ async def get_youtube_info(payload: dict):
         raise HTTPException(status_code=400, detail=user_friendly)
 
 def run_yt_download(task_id: str, url: str, custom_title: Optional[str], category: str, tags: List[str], browser: Optional[str] = None):
-    """Background worker for yt-dlp download & conversion to mp3."""
+    """Background worker executing yt_worker in an isolated, cancelable child process."""
     file_id = str(uuid.uuid4())
-    output_template = str(LIBRARY_DIR / f"{file_id}.%(ext)s")
-    
-    def progress_hook(d):
-        task = download_tasks.get(task_id, {})
-        if task.get("cancelled"):
-            raise Exception("CANCELLED_BY_USER")
+    cmd = [
+        sys.executable,
+        str(BASE_DIR / "yt_worker.py"),
+        "--url", url,
+        "--file-id", file_id,
+        "--library-dir", str(LIBRARY_DIR),
+        "--category", category or "YouTube",
+        "--tags", ",".join(tags) if tags else "",
+    ]
+    if custom_title:
+        cmd.extend(["--title", custom_title])
 
-        if d['status'] == 'downloading':
-            total = d.get('total_bytes') or d.get('total_bytes_estimate') or 1
-            downloaded = d.get('downloaded_bytes', 0)
-            percent = round((downloaded / total) * 100, 1)
-            download_tasks[task_id].update({
-                "status": "downloading",
-                "percent": percent,
-                "speed": d.get('speed', 0),
-                "eta": d.get('eta', 0)
-            })
-        elif d['status'] == 'finished':
-            download_tasks[task_id].update({
-                "status": "converting",
-                "percent": 100
-            })
+    settings = get_settings()
+    cookie_source = browser or settings.get("cookie_source", "auto")
 
-    ydl_opts = build_ydl_opts(for_download=True, custom_browser=browser)
-    ydl_opts.update({
-        'outtmpl': output_template,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'progress_hooks': [progress_hook],
-    })
+    if (cookie_source in ("auto", "file")) and COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10:
+        cmd.extend(["--cookies-file", str(COOKIES_FILE)])
+    elif cookie_source in ("chrome", "firefox", "edge", "opera", "brave", "vivaldi"):
+        cmd.extend(["--browser", cookie_source])
+
+    logger.info(f"Spawning yt_worker for task {task_id}")
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            
-        final_filename = f"{file_id}.mp3"
-        final_path = LIBRARY_DIR / final_filename
-        
-        # Verify file exists
-        if not final_path.exists():
-            candidates = list(LIBRARY_DIR.glob(f"{file_id}.*"))
-            if candidates:
-                final_path = candidates[0]
-                final_filename = final_path.name
-            else:
-                raise Exception("Файл не найден после конвертации.")
-                
-        title = custom_title if custom_title else info.get("title", "YouTube Audio")
-        duration = info.get("duration", 0)
-        filesize = final_path.stat().st_size if final_path.exists() else 0
-        
-        new_track = {
-            "id": file_id,
-            "title": title,
-            "filename": final_filename,
-            "duration": duration,
-            "category": category or "YouTube",
-            "tags": tags or ["youtube"],
-            "source": "youtube",
-            "source_url": url,
-            "filesize": filesize,
-            "date_added": datetime.now().isoformat()
-        }
-        
-        data = load_json(METADATA_FILE, {"tracks": []})
-        data["tracks"].append(new_track)
-        save_json(METADATA_FILE, data)
-        
-        download_tasks[task_id] = {
-            "status": "completed",
-            "percent": 100,
-            "track": new_track
-        }
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            cwd=str(BASE_DIR)
+        )
+        active_download_processes[task_id] = proc
     except Exception as e:
-        err_msg = str(e)
-        if "CANCELLED_BY_USER" in err_msg or download_tasks.get(task_id, {}).get("cancelled"):
-            logger.info(f"Task {task_id} was cancelled by user.")
+        logger.error(f"Failed to spawn yt_worker process: {e}")
+        download_tasks[task_id] = {
+            "status": "error",
+            "error": f"Не удалось запустить процесс загрузки: {e}"
+        }
+        return
+
+    start_time = datetime.now()
+    has_started_download = False
+
+    try:
+        for line in proc.stdout:
+            # Check for cancellation
+            if download_tasks.get(task_id, {}).get("cancelled"):
+                logger.info(f"Task {task_id} cancellation detected, killing worker PID {proc.pid}")
+                kill_process_tree(proc.pid)
+                break
+
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.startswith("PROGRESS:"):
+                try:
+                    payload = json.loads(line[len("PROGRESS:"):])
+                    status = payload.get("status")
+                    if status == "downloading":
+                        has_started_download = True
+                    download_tasks[task_id].update(payload)
+                except Exception:
+                    pass
+
+            elif line.startswith("SUCCESS:"):
+                try:
+                    new_track = json.loads(line[len("SUCCESS:"):])
+                    new_track["date_added"] = datetime.now().isoformat()
+                    
+                    data = load_json(METADATA_FILE, {"tracks": []})
+                    data["tracks"].append(new_track)
+                    save_json(METADATA_FILE, data)
+
+                    download_tasks[task_id] = {
+                        "status": "completed",
+                        "percent": 100,
+                        "track": new_track
+                    }
+                except Exception as e:
+                    logger.error(f"Error saving track metadata: {e}")
+                break
+
+            elif line.startswith("ERROR:"):
+                err_msg = line[len("ERROR:"):].strip()
+                logger.error(f"Worker reported error: {err_msg}")
+                download_tasks[task_id] = {
+                    "status": "error",
+                    "error": translate_yt_error(err_msg)
+                }
+                break
+
+            # Timeout check: if still in 'starting' for more than 20 seconds (e.g. Chrome DPAPI hang)
+            if not has_started_download and (datetime.now() - start_time).total_seconds() > 20:
+                logger.warning(f"Task {task_id} timed out waiting for browser cookies/response")
+                kill_process_tree(proc.pid)
+                download_tasks[task_id] = {
+                    "status": "error",
+                    "error": (
+                        "Время ожидания ответа истекло. Если выбран Chrome, браузер заблокировал чтение cookies. "
+                        "Пожалуйста, загрузите файл cookies.txt во вкладке 'Настройки Cookies' "
+                        "(экспортируется за 1 минуту через расширение 'Get cookies.txt LOCALLY')."
+                    )
+                }
+                break
+
+        proc.wait(timeout=2)
+    except Exception as e:
+        logger.error(f"Exception during worker monitoring: {e}")
+    finally:
+        active_download_processes.pop(task_id, None)
+        if download_tasks.get(task_id, {}).get("cancelled"):
             download_tasks[task_id] = {
                 "status": "cancelled",
                 "percent": 0,
@@ -562,12 +614,6 @@ def run_yt_download(task_id: str, url: str, custom_title: Optional[str], categor
                     p.unlink(missing_ok=True)
                 except Exception:
                     pass
-        else:
-            logger.error(f"Download failed: {err_msg}")
-            download_tasks[task_id] = {
-                "status": "error",
-                "error": translate_yt_error(err_msg)
-            }
 
 @app.post("/api/youtube/download")
 async def start_youtube_download(req: YoutubeDownloadRequest, background_tasks: BackgroundTasks):
@@ -591,12 +637,18 @@ async def start_youtube_download(req: YoutubeDownloadRequest, background_tasks: 
 
 @app.post("/api/youtube/cancel/{task_id}")
 def cancel_youtube_download(task_id: str):
+    logger.info(f"Cancellation requested for task {task_id}")
     if task_id in download_tasks:
         download_tasks[task_id]["cancelled"] = True
-        download_tasks[task_id]["status"] = "cancelling"
-        return {"status": "cancelling", "task_id": task_id}
-    raise HTTPException(status_code=404, detail="Task not found")
-    return {"task_id": task_id, "status": "started"}
+        download_tasks[task_id]["status"] = "cancelled"
+        download_tasks[task_id]["error"] = "Скачивание отменено пользователем"
+    
+    if task_id in active_download_processes:
+        proc = active_download_processes.pop(task_id)
+        logger.info(f"Immediately killing worker process PID {proc.pid}")
+        kill_process_tree(proc.pid)
+
+    return {"status": "cancelled", "task_id": task_id}
 
 @app.get("/api/youtube/status/{task_id}")
 def check_download_status(task_id: str):

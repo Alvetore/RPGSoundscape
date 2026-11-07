@@ -200,18 +200,19 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
   };
 
   const handleCancelDownload = async () => {
-    if (!downloadTaskId) {
-      setDownloadStatus(null);
-      setDownloadTaskId(null);
-      return;
-    }
+    const taskId = downloadTaskId;
     setDownloadStatus('cancelling');
     try {
-      await fetch(`/api/youtube/cancel/${downloadTaskId}`, { method: 'POST' });
+      if (taskId) {
+        await fetch(`/api/youtube/cancel/${taskId}`, { method: 'POST' });
+      }
     } catch (err) {
       console.error('Failed to cancel download:', err);
+    } finally {
       setDownloadStatus(null);
       setDownloadTaskId(null);
+      setDownloadPercent(0);
+      setDownloadError('Скачивание остановлено пользователем.');
     }
   };
 
