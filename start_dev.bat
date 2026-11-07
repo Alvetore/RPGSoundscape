@@ -42,9 +42,20 @@ if not defined PY_CMD (
     exit /b 1
 )
 
+:: One shared API token for the FastAPI backend and the Vite proxy.
+for /f "usebackq delims=" %%T in (`!PY_CMD! -c "import secrets; print(secrets.token_urlsafe(32))"`) do set "RPG_API_TOKEN=%%T"
+if not defined RPG_API_TOKEN (
+    echo [ОШИБКА] Не удалось сгенерировать API-токен.
+    pause
+    exit /b 1
+)
+
 echo Запуск бэкенда на порту 8000 и фронтенда Vite (http://localhost:5173)...
 start "RPG Backend (FastAPI)" cmd /k "cd /d "%~dp0" && !PY_CMD! -m uvicorn app:app --app-dir backend --host 0.0.0.0 --port 8000 --reload"
 start "RPG Frontend (Vite)" cmd /k "cd /d "%~dp0\frontend" && npm run dev"
+
+timeout /t 2 /nobreak >nul
+start "" "http://localhost:5173/?token=%RPG_API_TOKEN%"
 
 echo.
 echo Серверы запущены в отдельных окнах.

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   AudioTrack 
 } from '../types';
@@ -23,6 +23,7 @@ interface LibraryPanelProps {
   onRefreshLibrary: () => void;
   onOpenYoutubeModal: () => void;
   onAssignTrackToSlot: (track: AudioTrack, slotIndex: number) => void;
+  onTrackDeleted: (trackId: string) => void;
   selectedSlotForAssign: number | null;
   setSelectedSlotForAssign: (slot: number | null) => void;
 }
@@ -32,6 +33,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   onRefreshLibrary,
   onOpenYoutubeModal,
   onAssignTrackToSlot,
+  onTrackDeleted,
   selectedSlotForAssign,
   setSelectedSlotForAssign
 }) => {
@@ -41,6 +43,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Stop preview playback when the user switches to another tab.
+  useEffect(() => {
+    return () => {
+      previewAudioRef.current?.pause();
+    };
+  }, []);
 
   // Categories list
   const categories = [
@@ -53,6 +62,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     { id: 'Magic', label: '✨ Магия' },
     { id: 'YouTube', label: '▶️ YouTube' },
     { id: 'Local', label: '📁 Свои файлы' },
+    { id: 'General', label: '📦 Общее' },
   ];
 
   // Filtered tracks
@@ -95,6 +105,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
+    let failed = 0;
+    let lastError = '';
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -103,12 +115,23 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         formData.append('category', 'Local');
         formData.append('tags', 'upload,custom');
 
-        await fetch('/api/upload', {
+        const res = await fetch('/api/upload', {
           method: 'POST',
           body: formData,
         });
+        if (!res.ok) {
+          failed += 1;
+          try {
+            lastError = (await res.json()).detail || '';
+          } catch {
+            lastError = `HTTP ${res.status}`;
+          }
+        }
       }
       onRefreshLibrary();
+      if (failed > 0) {
+        alert(`Не удалось загрузить файлов: ${failed}. ${lastError}`);
+      }
     } catch (err) {
       console.error('Upload failed:', err);
       alert('Ошибка при загрузке аудиофайла');
@@ -122,14 +145,19 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const handleDeleteTrack = async (track: AudioTrack) => {
     if (window.confirm(`Удалить звук "${track.title}" из библиотеки?`)) {
       try {
-        await fetch(`/api/library/${track.id}`, { method: 'DELETE' });
+        const res = await fetch(`/api/library/${track.id}`, { method: 'DELETE' });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
         if (previewTrackId === track.id && previewAudioRef.current) {
           previewAudioRef.current.pause();
           setPreviewTrackId(null);
         }
+        onTrackDeleted(track.id);
         onRefreshLibrary();
       } catch (err) {
         console.error('Delete failed:', err);
+        alert('Не удалось удалить трек из библиотеки.');
       }
     }
   };

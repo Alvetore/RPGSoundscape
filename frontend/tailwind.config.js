@@ -1,3 +1,5 @@
+import animate from 'tailwindcss-animate';
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -8,6 +10,7 @@ export default {
   theme: {
     extend: {
       colors: {
+        crimson: '#e11d48',
         rpg: {
           bg: '#0c0e14',
           panel: '#151922',
@@ -30,5 +33,5 @@ export default {
       }
     },
   },
-  plugins: [],
+  plugins: [animate],
 }

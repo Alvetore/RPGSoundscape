@@ -3,17 +3,39 @@ import os
 import sys
 import time
 import socket
+import secrets
 import urllib.request
 import webbrowser
 import threading
 from pathlib import Path
+from urllib.parse import quote
 
 # Add backend directory to sys.path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR / "backend"))
 
+# Keep runtime data in the user profile, not inside the application folder.
+# This keeps the library, presets and YouTube cookies across updates and
+# portable launches.
+def get_storage_root() -> Path:
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        return Path(appdata) / "RPGSoundscape" / "storage"
+    return Path.home() / ".rpg-soundscape" / "storage"
+
+if not os.environ.get("RPG_DATA_DIR"):
+    os.environ["RPG_DATA_DIR"] = str(get_storage_root())
+API_TOKEN = os.environ.get("RPG_API_TOKEN") or secrets.token_urlsafe(32)
+os.environ["RPG_API_TOKEN"] = API_TOKEN
+
 import uvicorn
-from app import get_local_ip
+
+def read_running_token() -> str:
+    token_file = Path(os.environ["RPG_DATA_DIR"]) / "data" / ".api_token"
+    try:
+        return token_file.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
 
 def is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -24,7 +46,8 @@ def is_app_already_running(port: int = 8000) -> bool:
     try:
         req = urllib.request.Request(f"http://127.0.0.1:{port}/health", headers={"User-Agent": "RPG-Launcher"})
         with urllib.request.urlopen(req, timeout=1.0) as resp:
-            return resp.status == 200
+            body = resp.read().decode("utf-8", errors="ignore")
+            return resp.status == 200 and "RPG Music" in body
     except Exception:
         return False
 
@@ -43,11 +66,16 @@ def open_browser(url: str):
         print(f"Не удалось открыть браузер автоматически: {e}")
 
 if __name__ == "__main__":
-    local_ip = get_local_ip()
-    
-    # 1. Check if application is already running on port 8000
+    # 1. Check if application is already running on port 8000.
+    # Import app only after this check: importing it writes the current API
+    # token and would otherwise overwrite the token of the running instance.
     if is_app_already_running(8000):
-        url = "http://localhost:8000"
+        running_token = read_running_token()
+        url = (
+            f"http://localhost:8000/?token={quote(running_token, safe='')}"
+            if running_token
+            else "http://localhost:8000"
+        )
         print("\n" + "=" * 65)
         print(" 🎲 RPG SOUNDSCAPE STUDIO УЖЕ ЗАПУЩЕНА!")
         print("=" * 65)
@@ -57,13 +85,22 @@ if __name__ == "__main__":
         webbrowser.open(url)
         sys.exit(0)
 
+    stored_token = read_running_token()
+    if stored_token:
+        API_TOKEN = stored_token
+        os.environ["RPG_API_TOKEN"] = API_TOKEN
+
+    from app import get_local_ip
+    local_ip = get_local_ip()
+
     # 2. Find available port
     target_port = find_available_port(8000)
     if target_port != 8000:
         print(f"\n[ВНИМАНИЕ] Порт 8000 занят другой программой. Используется порт {target_port}.")
 
-    target_url = f"http://localhost:{target_port}"
-    lan_url = f"http://{local_ip}:{target_port}"
+    token_q = quote(API_TOKEN, safe='')
+    target_url = f"http://localhost:{target_port}/?token={token_q}"
+    lan_url = f"http://{local_ip}:{target_port}/?token={token_q}"
 
     print("\n" + "=" * 65)
     print(" 🎲 RPG SOUNDSCAPE STUDIO — ЗВУКОВОЙ ПУЛЬТ ДЛЯ НРИ")

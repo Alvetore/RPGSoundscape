@@ -5,16 +5,21 @@ import uuid
 import socket
 import asyncio
 import logging
+import queue
+import secrets
+import shutil
 import subprocess
+import threading
+import time
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import quote, urlparse
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from pydantic import BaseModel, Field
 import yt_dlp
 
 logging.basicConfig(level=logging.INFO)
@@ -22,31 +27,241 @@ logger = logging.getLogger("rpg_music")
 
 # Base paths
 BASE_DIR = Path(__file__).resolve().parent
-LIBRARY_DIR = BASE_DIR / "audio_library"
-DATA_DIR = BASE_DIR / "data"
 STATIC_DIR = BASE_DIR.parent / "frontend" / "dist"
 
-LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+# Runtime data belongs outside the application bundle. Electron and run.py
+# pass RPG_DATA_DIR so that library files, cookies and presets survive
+# application updates / portable builds. Without the variable we keep the
+# legacy in-project layout for direct development.
+_legacy_data_dir = BASE_DIR / "data"
+_legacy_library_dir = BASE_DIR / "audio_library"
+_storage_root_env = os.environ.get("RPG_DATA_DIR", "").strip()
+if _storage_root_env:
+    STORAGE_ROOT = Path(_storage_root_env).expanduser().resolve()
+else:
+    STORAGE_ROOT = BASE_DIR
+
+DATA_DIR = STORAGE_ROOT / "data"
+LIBRARY_DIR = STORAGE_ROOT / "audio_library"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+LIBRARY_DIR.mkdir(parents=True, exist_ok=True)
+
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".webm", ".aac", ".opus"}
+MAX_UPLOAD_BYTES = int(os.environ.get("RPG_MAX_UPLOAD_MB", "500")) * 1024 * 1024
+YT_START_TIMEOUT_SEC = int(os.environ.get("RPG_YT_START_TIMEOUT_SEC", "45"))
+
+def _copy_file_atomic(src: Path, dst: Path):
+    """Copy a file without leaving a partially written destination on crash."""
+    temp_dst = dst.with_name(f".{dst.name}.migrating")
+    shutil.copy2(src, temp_dst)
+    os.replace(temp_dst, dst)
+
+def migrate_legacy_storage():
+    """Move data created by older in-project builds into RPG_DATA_DIR once."""
+    if STORAGE_ROOT.resolve() == BASE_DIR.resolve():
+        return
+
+    marker = STORAGE_ROOT / ".storage_initialized"
+    if marker.exists():
+        return
+
+    for name in ("library.json", "presets.json", "settings.json", "cookies.txt"):
+        src = _legacy_data_dir / name
+        dst = DATA_DIR / name
+        if src.is_file() and not dst.exists():
+            try:
+                _copy_file_atomic(src, dst)
+                logger.info(f"Migrated legacy data file: {name}")
+            except Exception as e:
+                logger.warning(f"Could not migrate {src}: {e}")
+
+    if _legacy_library_dir.is_dir():
+        for src in _legacy_library_dir.iterdir():
+            if not src.is_file() or src.suffix.lower() not in AUDIO_EXTENSIONS:
+                continue
+            dst = LIBRARY_DIR / src.name
+            if not dst.exists():
+                try:
+                    _copy_file_atomic(src, dst)
+                except Exception as e:
+                    logger.warning(f"Could not migrate audio file {src.name}: {e}")
+
+    try:
+        marker.write_text(datetime.now().isoformat(), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not write storage marker: {e}")
+
+migrate_legacy_storage()
 
 METADATA_FILE = DATA_DIR / "library.json"
 PRESETS_FILE = DATA_DIR / "presets.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 COOKIES_FILE = DATA_DIR / "cookies.txt"
+API_TOKEN_FILE = DATA_DIR / ".api_token"
+
+# LAN clients must present this token. Local desktop access is also token
+# protected, so a random website cannot drive-by control the localhost API.
+API_TOKEN = os.environ.get("RPG_API_TOKEN", "").strip() or secrets.token_urlsafe(32)
+API_TOKEN_COOKIE = "rpg_api_token"
+try:
+    API_TOKEN_FILE.write_text(API_TOKEN, encoding="utf-8")
+    if os.name != "nt":
+        os.chmod(API_TOKEN_FILE, 0o600)
+except Exception as e:
+    logger.warning(f"Could not persist API token: {e}")
 
 app = FastAPI(title="RPG Music & Ambience Studio", version="1.0.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def _request_token(request: Request) -> str:
+    return (
+        request.headers.get("x-rpg-token")
+        or request.query_params.get("token")
+        or request.cookies.get(API_TOKEN_COOKIE)
+        or ""
+    ).strip()
+
+def _is_token_valid(token: str) -> bool:
+    return bool(token) and secrets.compare_digest(token, API_TOKEN)
+
+@app.middleware("http")
+async def token_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    supplied_token = _request_token(request)
+    authorized = _is_token_valid(supplied_token)
+
+    protected = (
+        path.startswith("/api/")
+        or path in ("/", "/index.html", "/openapi.json")
+        or path.startswith("/docs")
+        or path.startswith("/redoc")
+    )
+
+    if protected and not authorized:
+        if path in ("/", "/index.html"):
+            return HTMLResponse(
+                "<!doctype html><html lang='ru'><meta charset='utf-8'>"
+                "<title>RPG Soundscape Studio — требуется доступ</title>"
+                "<body style='font-family:sans-serif;background:#0c0e14;color:#e2e8f0;padding:40px'>"
+                "<h1>Требуется доступ</h1>"
+                "<p>Откройте приложение по ссылке с токеном из QR-кода или из консоли запуска.</p>"
+                "<p style='color:#94a3b8'>Например: <code>http://IP:8000/?token=...</code></p>"
+                "</body></html>",
+                status_code=401,
+            )
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    response = await call_next(request)
+    # Do not leak the ?token=... URL to external font/thumbnail requests.
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    if authorized:
+        response.set_cookie(
+            API_TOKEN_COOKIE,
+            API_TOKEN,
+            max_age=7 * 24 * 60 * 60,
+            httponly=True,
+            samesite="lax",
+        )
+    return response
+
+class PlaybackHub:
+    """Relays commands from LAN remotes to the authoritative desktop player."""
+
+    def __init__(self):
+        self.host: Optional[WebSocket] = None
+        self.remotes: List[WebSocket] = []
+        self.last_state: Optional[Dict[str, Any]] = None
+        self.lock = asyncio.Lock()
+
+    async def _send(self, websocket: WebSocket, payload: Dict[str, Any]) -> bool:
+        try:
+            await websocket.send_text(json.dumps(payload, ensure_ascii=False))
+            return True
+        except Exception:
+            return False
+
+    async def set_host(self, websocket: WebSocket):
+        async with self.lock:
+            old_host = self.host
+            self.host = websocket
+        if old_host is not None and old_host is not websocket:
+            try:
+                await old_host.close(code=4000, reason="Replaced by another host")
+            except Exception:
+                pass
+        if self.last_state is not None:
+            await self._send(websocket, {"type": "state", "state": self.last_state})
+        await self._broadcast_host_status(True)
+
+    async def remove_host(self, websocket: WebSocket):
+        removed = False
+        async with self.lock:
+            if self.host is websocket:
+                self.host = None
+                removed = True
+        if removed:
+            await self._broadcast_host_status(False)
+
+    async def add_remote(self, websocket: WebSocket):
+        async with self.lock:
+            if websocket not in self.remotes:
+                self.remotes.append(websocket)
+        if self.last_state is not None:
+            await self._send(websocket, {"type": "state", "state": self.last_state})
+        await self._send(websocket, {"type": "host_status", "connected": self.host is not None})
+
+    async def remove_remote(self, websocket: WebSocket):
+        async with self.lock:
+            if websocket in self.remotes:
+                self.remotes.remove(websocket)
+
+    async def _broadcast_host_status(self, connected: bool):
+        payload = {"type": "host_status", "connected": connected}
+        for remote in list(self.remotes):
+            if not await self._send(remote, payload):
+                await self.remove_remote(remote)
+
+    async def publish_state(self, state: Dict[str, Any]):
+        self.last_state = state
+        payload = {"type": "state", "state": state}
+        for remote in list(self.remotes):
+            if not await self._send(remote, payload):
+                await self.remove_remote(remote)
+
+    async def forward_command(self, origin: WebSocket, command: Dict[str, Any]):
+        host = self.host
+        if host is None:
+            await self._send(origin, {"type": "error", "message": "Desktop host is not connected"})
+            return
+        if not await self._send(host, {"type": "command", "command": command}):
+            removed = False
+            async with self.lock:
+                if self.host is host:
+                    self.host = None
+                    removed = True
+            await self._send(origin, {"type": "error", "message": "Desktop host disconnected"})
+            if removed:
+                await self._broadcast_host_status(False)
+
+
+playback_hub = PlaybackHub()
 
 # Active download tasks dictionary: task_id -> status dict
 download_tasks: Dict[str, Dict[str, Any]] = {}
+download_task_timestamps: Dict[str, float] = {}
 active_download_processes: Dict[str, subprocess.Popen] = {}
+
+def cleanup_stale_download_tasks(max_age_sec: int = 3600):
+    """Drop finished task records that nobody has polled for an hour."""
+    now = time.time()
+    stale = [
+        task_id
+        for task_id, updated_at in download_task_timestamps.items()
+        if now - updated_at > max_age_sec and task_id not in active_download_processes
+    ]
+    for task_id in stale:
+        download_tasks.pop(task_id, None)
+        download_task_timestamps.pop(task_id, None)
 
 def kill_process_tree(pid: int):
     """Instantly kills a process and all its children across Windows/Linux."""
@@ -79,57 +294,77 @@ def load_json(file_path: Path, default_val: Any) -> Any:
             logger.error(f"Error reading {file_path}: {e}")
     return default_val
 
+_JSON_WRITE_LOCK = threading.Lock()
+# Serializes read-modify-write cycles on metadata/presets. Without it an
+# upload completing at the same time as a download can silently lose a track.
+_DATA_LOCK = threading.RLock()
+
 def save_json(file_path: Path, data: Any):
-    temp_file = file_path.with_suffix(".tmp")
-    with open(temp_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(temp_file, file_path)
+    # Unique temp names avoid collisions when an upload, a download worker and
+    # a preset save try to write metadata at the same time.
+    temp_file = file_path.with_name(f".{file_path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with _JSON_WRITE_LOCK:
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_file, file_path)
+    finally:
+        if temp_file.exists():
+            try:
+                temp_file.unlink()
+            except Exception:
+                pass
 
 def get_settings() -> Dict[str, Any]:
-    return load_json(SETTINGS_FILE, {"cookie_source": "auto"})
+    with _DATA_LOCK:
+        return load_json(SETTINGS_FILE, {"cookie_source": "auto"})
 
 def save_settings(settings: Dict[str, Any]):
-    save_json(SETTINGS_FILE, settings)
+    with _DATA_LOCK:
+        save_json(SETTINGS_FILE, settings)
 
 def sync_library_with_disk():
     """Ensure all audio files in LIBRARY_DIR are registered in library.json."""
-    data = load_json(METADATA_FILE, {"tracks": []})
-    existing_files = {t["filename"] for t in data["tracks"]}
-    
-    valid_extensions = {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".webm", ".aac", ".opus"}
-    modified = False
+    with _DATA_LOCK:
+        data = load_json(METADATA_FILE, {"tracks": []})
+        existing_files = {t["filename"] for t in data["tracks"]}
 
-    # Check for orphaned records
-    tracks_to_keep = []
-    for t in data["tracks"]:
-        if (LIBRARY_DIR / t["filename"]).exists():
-            tracks_to_keep.append(t)
-        else:
-            modified = True
-    data["tracks"] = tracks_to_keep
+        valid_extensions = AUDIO_EXTENSIONS
+        modified = False
 
-    # Add loose audio files found on disk
-    for file in LIBRARY_DIR.iterdir():
-        if file.is_file() and file.suffix.lower() in valid_extensions and file.name not in existing_files:
-            file_id = str(uuid.uuid4())
-            stat = file.stat()
-            title = file.stem.replace("_", " ").title()
-            data["tracks"].append({
-                "id": file_id,
-                "title": title,
-                "filename": file.name,
-                "duration": 0,
-                "category": "General",
-                "tags": ["local"],
-                "source": "local",
-                "filesize": stat.st_size,
-                "date_added": datetime.now().isoformat()
-            })
-            modified = True
+        # Check for orphaned records
+        tracks_to_keep = []
+        for t in data["tracks"]:
+            if (LIBRARY_DIR / t["filename"]).exists():
+                tracks_to_keep.append(t)
+            else:
+                modified = True
+        data["tracks"] = tracks_to_keep
 
-    if modified or not METADATA_FILE.exists():
-        save_json(METADATA_FILE, data)
-    return data
+        # Add loose audio files found on disk
+        for file in LIBRARY_DIR.iterdir():
+            if file.is_file() and file.suffix.lower() in valid_extensions and file.name not in existing_files:
+                file_id = str(uuid.uuid4())
+                stat = file.stat()
+                title = file.stem.replace("_", " ").title()
+                data["tracks"].append({
+                    "id": file_id,
+                    "title": title,
+                    "filename": file.name,
+                    "duration": 0,
+                    "category": "General",
+                    "tags": ["local"],
+                    "source": "local",
+                    "filesize": stat.st_size,
+                    "date_added": datetime.now().isoformat()
+                })
+                modified = True
+
+        if modified or not METADATA_FILE.exists():
+            save_json(METADATA_FILE, data)
+        return data
 
 # Initialize library on startup
 sync_library_with_disk()
@@ -159,7 +394,15 @@ def inspect_cookie_file(file_path: Path) -> Dict[str, Any]:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith("#"):
+                if not line:
+                    continue
+                # Netscape-format exports mark HttpOnly cookies with a
+                # "#HttpOnly_" domain prefix. The auth cookies we care about
+                # (LOGIN_INFO, SID, SSID) are HttpOnly, so they must not be
+                # skipped together with regular comment lines.
+                if line.startswith("#HttpOnly_"):
+                    line = line[len("#HttpOnly_"):]
+                elif line.startswith("#"):
                     continue
                 parts = line.split("\t")
                 lines_count += 1
@@ -329,12 +572,17 @@ def translate_yt_error(err_str: str) -> str:
         )
     elif "timed out" in lower or "timeout" in lower:
         return "Превышено время ожидания ответа от сервера YouTube. Возможно, канал связи заблокирован или замедлен провайдером."
-    elif "failed to decrypt with dpapi" in lower:
-        return (
-            "Браузер защитил cookies системным шифрованием Windows DPAPI. "
-            "Пожалуйста, загрузите файл cookies.txt вручную во вкладке 'Настройки Cookies'."
-        )
     return err_str
+
+def validate_video_url(url: str) -> str:
+    value = (url or "").strip()
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(
+            status_code=400,
+            detail="Некорректная ссылка. Поддерживаются только http/https URL.",
+        )
+    return value
 
 # --- Models ---
 class TrackUpdate(BaseModel):
@@ -343,14 +591,14 @@ class TrackUpdate(BaseModel):
     tags: Optional[List[str]] = None
 
 class PresetSlotModel(BaseModel):
-    slotIndex: int
+    slotIndex: int = Field(ge=0, le=15)
     trackId: Optional[str] = None
     title: Optional[str] = None
-    volume: float = 0.7
+    volume: float = Field(0.7, ge=0.0, le=1.0)
     loop: bool = True
     active: bool = False
-    pan: float = 0.0
-    playbackRate: float = 1.0
+    pan: float = Field(0.0, ge=-1.0, le=1.0)
+    playbackRate: float = Field(1.0, ge=0.25, le=4.0)
 
 class PresetModel(BaseModel):
     id: Optional[str] = None
@@ -377,14 +625,16 @@ def health_check():
     return {"status": "ok", "app": "RPG Music & Ambience Studio"}
 
 @app.get("/api/info")
-def get_info():
+def get_info(request: Request):
     ip = get_local_ip()
+    port = request.url.port or int(os.environ.get("PORT", 8000))
     return {
         "status": "online",
         "app": "RPG Music & Ambience Studio",
         "version": "1.0.0",
         "lan_ip": ip,
-        "access_url": f"http://{ip}:8000"
+        "access_url": f"http://{ip}:{port}/?token={quote(API_TOKEN, safe='')}&role=remote",
+        "requires_token": True,
     }
 
 @app.get("/api/library")
@@ -402,56 +652,79 @@ def get_track_info(track_id: str):
 
 @app.put("/api/library/{track_id}")
 def update_track(track_id: str, payload: TrackUpdate):
-    data = load_json(METADATA_FILE, {"tracks": []})
-    found = False
-    for t in data["tracks"]:
-        if t["id"] == track_id:
-            if payload.title is not None:
-                t["title"] = payload.title
-            if payload.category is not None:
-                t["category"] = payload.category
-            if payload.tags is not None:
-                t["tags"] = payload.tags
-            found = True
-            break
-    if not found:
-        raise HTTPException(status_code=404, detail="Track not found")
-    save_json(METADATA_FILE, data)
-    return {"status": "success"}
+    with _DATA_LOCK:
+        data = load_json(METADATA_FILE, {"tracks": []})
+        found = False
+        for t in data["tracks"]:
+            if t["id"] == track_id:
+                if payload.title is not None:
+                    t["title"] = payload.title
+                if payload.category is not None:
+                    t["category"] = payload.category
+                if payload.tags is not None:
+                    t["tags"] = payload.tags
+                found = True
+                break
+        if not found:
+            raise HTTPException(status_code=404, detail="Track not found")
+        save_json(METADATA_FILE, data)
+        return {"status": "success"}
 
 @app.delete("/api/library/{track_id}")
 def delete_track(track_id: str):
-    data = load_json(METADATA_FILE, {"tracks": []})
-    target_filename = None
-    new_tracks = []
-    for t in data["tracks"]:
-        if t["id"] == track_id:
-            target_filename = t["filename"]
-        else:
-            new_tracks.append(t)
-    
-    if target_filename:
-        file_path = LIBRARY_DIR / target_filename
-        if file_path.exists():
+    with _DATA_LOCK:
+        data = load_json(METADATA_FILE, {"tracks": []})
+        target_filename = None
+        new_tracks = []
+        for t in data["tracks"]:
+            if t["id"] == track_id:
+                target_filename = t["filename"]
+            else:
+                new_tracks.append(t)
+
+        if not target_filename:
+            raise HTTPException(status_code=404, detail="Track not found")
+
+        library_root = LIBRARY_DIR.resolve()
+        try:
+            file_path = (library_root / target_filename).resolve()
+        except Exception:
+            file_path = None
+        if (
+            file_path is not None
+            and file_path.is_relative_to(library_root)
+            and file_path.is_file()
+        ):
             try:
                 os.remove(file_path)
             except Exception as e:
                 logger.error(f"Failed to delete file {file_path}: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Не удалось удалить аудиофайл. Возможно, он сейчас воспроизводится.",
+                )
         data["tracks"] = new_tracks
         save_json(METADATA_FILE, data)
         return {"status": "deleted"}
-    raise HTTPException(status_code=404, detail="Track not found")
 
 @app.get("/api/audio/{filename}")
 async def stream_audio(filename: str):
     """Serve offline audio file with full streaming range support."""
-    file_path = LIBRARY_DIR / filename
-    if not file_path.exists():
+    library_root = LIBRARY_DIR.resolve()
+    try:
+        file_path = (library_root / filename).resolve()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    # Never allow absolute paths, backslash traversal or symlinks escaping
+    # the library directory. Without this check Windows accepts
+    # "..\..\package.json" and even "C:\Windows\win.ini".
+    if not file_path.is_relative_to(library_root) or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Audio file not found")
     
     media_type = "audio/mpeg"
     suffix = file_path.suffix.lower()
-    if suffix == ".ogg":
+    if suffix in (".ogg", ".opus"):
         media_type = "audio/ogg"
     elif suffix == ".wav":
         media_type = "audio/wav"
@@ -462,23 +735,45 @@ async def stream_audio(filename: str):
     elif suffix == ".flac":
         media_type = "audio/flac"
         
-    return FileResponse(path=file_path, media_type=media_type, filename=filename)
+    # Do not set Content-Disposition: attachment; audio elements must play
+    # the stream inline instead of triggering a download.
+    return FileResponse(path=file_path, media_type=media_type)
 
 @app.post("/api/upload")
 async def upload_audio(file: UploadFile = File(...), category: str = Form("Local"), tags: str = Form("")):
     """Allow user to drag & drop or upload local audio files."""
     file_id = str(uuid.uuid4())
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in {".mp3", ".wav", ".ogg", ".flac", ".m4a", ".webm", ".aac", ".opus"}:
+    if suffix not in AUDIO_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Unsupported audio format")
     
     safe_filename = f"{file_id}{suffix}"
     destination = LIBRARY_DIR / safe_filename
-    
-    content = await file.read()
-    with open(destination, "wb") as f:
-        f.write(content)
-        
+
+    # Stream to disk instead of loading a potentially huge upload into RAM.
+    total_size = 0
+    try:
+        with open(destination, "wb") as f:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Файл превышает лимит {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+                    )
+                f.write(chunk)
+        if total_size == 0:
+            raise HTTPException(status_code=400, detail="Пустой аудиофайл")
+    except HTTPException:
+        destination.unlink(missing_ok=True)
+        raise
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
     if "local" not in tag_list:
         tag_list.append("local")
@@ -493,14 +788,15 @@ async def upload_audio(file: UploadFile = File(...), category: str = Form("Local
         "category": category,
         "tags": tag_list,
         "source": "upload",
-        "filesize": len(content),
+        "filesize": total_size,
         "date_added": datetime.now().isoformat()
     }
     
-    data = load_json(METADATA_FILE, {"tracks": []})
-    data["tracks"].append(track_item)
-    save_json(METADATA_FILE, data)
-    
+    with _DATA_LOCK:
+        data = load_json(METADATA_FILE, {"tracks": []})
+        data["tracks"].append(track_item)
+        save_json(METADATA_FILE, data)
+
     return track_item
 
 # --- Cookie Management Endpoints ---
@@ -510,7 +806,7 @@ def get_cookie_status():
     settings = get_settings()
     info = inspect_cookie_file(COOKIES_FILE)
     info["cookie_source"] = settings.get("cookie_source", "auto")
-    info["available_browsers"] = ["auto", "file", "chrome", "firefox", "edge", "opera", "brave", "none"]
+    info["available_browsers"] = ["auto", "file", "chrome", "firefox", "edge", "opera", "brave", "vivaldi", "none"]
     return info
 
 @app.post("/api/youtube/cookies")
@@ -519,8 +815,18 @@ async def upload_cookies_file(file: UploadFile = File(...)):
     content = await file.read()
     if len(content) < 10:
         raise HTTPException(status_code=400, detail="Файл cookies пустой")
-    with open(COOKIES_FILE, "wb") as f:
-        f.write(content)
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Файл cookies слишком большой")
+
+    temp_file = COOKIES_FILE.with_name(f".{COOKIES_FILE.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(temp_file, "wb") as f:
+            f.write(content)
+        os.replace(temp_file, COOKIES_FILE)
+    finally:
+        if temp_file.exists():
+            temp_file.unlink(missing_ok=True)
+
     settings = get_settings()
     settings["cookie_source"] = "auto"
     save_settings(settings)
@@ -548,10 +854,8 @@ def update_cookie_mode(req: CookieModeRequest):
 @app.post("/api/youtube/info")
 async def get_youtube_info(payload: dict):
     """Retrieve metadata about a YouTube video without downloading."""
-    url = payload.get("url")
+    url = validate_video_url(payload.get("url", ""))
     browser = payload.get("browser")
-    if not url:
-        raise HTTPException(status_code=400, detail="URL is required")
 
     session_file = None
     try:
@@ -626,81 +930,129 @@ def run_yt_download(task_id: str, url: str, custom_title: Optional[str], categor
     start_time = datetime.now()
     has_started_download = False
 
+    # Read the worker's stdout in a separate thread. The previous
+    # "for line in proc.stdout" loop could block forever, which meant the
+    # 20-second watchdog never ran when yt-dlp/Chrome cookies hung silently.
+    line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
+
+    def _read_worker_output():
+        try:
+            if proc.stdout:
+                for raw_line in proc.stdout:
+                    line_queue.put(raw_line)
+        finally:
+            line_queue.put(None)
+
+    threading.Thread(target=_read_worker_output, daemon=True).start()
+
     try:
-        for line in proc.stdout:
-            # Check for cancellation
+        while True:
+            # Check for cancellation even while the worker prints nothing.
             if download_tasks.get(task_id, {}).get("cancelled"):
                 logger.info(f"Task {task_id} cancellation detected, killing worker PID {proc.pid}")
                 kill_process_tree(proc.pid)
                 break
 
+            try:
+                line = line_queue.get(timeout=0.5)
+            except queue.Empty:
+                line = ""
+
+            if line is None:
+                break
+
             line = line.strip()
-            if not line:
-                continue
+            if line:
+                if line.startswith("PROGRESS:"):
+                    try:
+                        payload = json.loads(line[len("PROGRESS:"):])
+                        status = payload.get("status")
+                        if status == "downloading":
+                            has_started_download = True
+                        download_tasks[task_id].update(payload)
+                    except Exception:
+                        pass
 
-            if line.startswith("PROGRESS:"):
-                try:
-                    payload = json.loads(line[len("PROGRESS:"):])
-                    status = payload.get("status")
-                    if status == "downloading":
-                        has_started_download = True
-                    download_tasks[task_id].update(payload)
-                except Exception:
-                    pass
+                elif line.startswith("SUCCESS:"):
+                    try:
+                        new_track = json.loads(line[len("SUCCESS:"):])
+                        new_track["date_added"] = datetime.now().isoformat()
 
-            elif line.startswith("SUCCESS:"):
-                try:
-                    new_track = json.loads(line[len("SUCCESS:"):])
-                    new_track["date_added"] = datetime.now().isoformat()
-                    
-                    data = load_json(METADATA_FILE, {"tracks": []})
-                    data["tracks"].append(new_track)
-                    save_json(METADATA_FILE, data)
+                        with _DATA_LOCK:
+                            data = load_json(METADATA_FILE, {"tracks": []})
+                            data["tracks"].append(new_track)
+                            save_json(METADATA_FILE, data)
 
+                        download_tasks[task_id] = {
+                            "status": "completed",
+                            "percent": 100,
+                            "track": new_track
+                        }
+                    except Exception as e:
+                        logger.error(f"Error saving track metadata: {e}")
+                    break
+
+                elif line.startswith("ERROR:"):
+                    err_msg = line[len("ERROR:"):].strip()
+                    logger.error(f"Worker reported error: {err_msg}")
                     download_tasks[task_id] = {
-                        "status": "completed",
-                        "percent": 100,
-                        "track": new_track
+                        "status": "error",
+                        "error": translate_yt_error(err_msg)
                     }
-                except Exception as e:
-                    logger.error(f"Error saving track metadata: {e}")
-                break
+                    break
 
-            elif line.startswith("ERROR:"):
-                err_msg = line[len("ERROR:"):].strip()
-                logger.error(f"Worker reported error: {err_msg}")
-                download_tasks[task_id] = {
-                    "status": "error",
-                    "error": translate_yt_error(err_msg)
-                }
-                break
-
-            # Timeout check: if still in 'starting' for more than 20 seconds (e.g. Chrome DPAPI hang)
-            if not has_started_download and (datetime.now() - start_time).total_seconds() > 20:
+            # Timeout check runs independently of worker output.
+            if not has_started_download and (datetime.now() - start_time).total_seconds() > YT_START_TIMEOUT_SEC:
                 logger.warning(f"Task {task_id} timed out waiting for browser cookies/response")
                 kill_process_tree(proc.pid)
                 download_tasks[task_id] = {
                     "status": "error",
                     "error": (
-                        "Время ожидания ответа истекло. Если выбран Chrome, браузер заблокировал чтение cookies. "
+                        f"Время ожидания ответа истекло ({YT_START_TIMEOUT_SEC} сек). "
+                        "Если выбран Chrome, браузер заблокировал чтение cookies. "
                         "Пожалуйста, загрузите файл cookies.txt во вкладке 'Настройки Cookies' "
                         "(экспортируется за 1 минуту через расширение 'Get cookies.txt LOCALLY')."
                     )
                 }
                 break
 
-        proc.wait(timeout=2)
+        current_status = download_tasks.get(task_id, {}).get("status")
+        if (
+            not download_tasks.get(task_id, {}).get("cancelled")
+            and current_status in ("starting", "downloading", "converting")
+        ):
+            download_tasks[task_id] = {
+                "status": "error",
+                "error": "Процесс загрузки завершился без результата. Проверьте журнал backend-а."
+            }
+
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Worker PID {proc.pid} did not exit, killing it")
+            kill_process_tree(proc.pid)
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
     except Exception as e:
         logger.error(f"Exception during worker monitoring: {e}")
+        kill_process_tree(proc.pid)
+        download_tasks[task_id] = {
+            "status": "error",
+            "error": f"Ошибка мониторинга загрузки: {e}"
+        }
     finally:
         active_download_processes.pop(task_id, None)
-        if download_tasks.get(task_id, {}).get("cancelled"):
-            download_tasks[task_id] = {
-                "status": "cancelled",
-                "percent": 0,
-                "error": "Скачивание отменено пользователем"
-            }
-            # Clean up partial files
+        status = download_tasks.get(task_id, {}).get("status")
+        if status in ("cancelled", "error"):
+            if status == "cancelled":
+                download_tasks[task_id] = {
+                    "status": "cancelled",
+                    "percent": 0,
+                    "error": "Скачивание отменено пользователем"
+                }
+            # Clean up partial files for failed/cancelled downloads.
             for p in LIBRARY_DIR.glob(f"{file_id}.*"):
                 try:
                     p.unlink(missing_ok=True)
@@ -709,17 +1061,19 @@ def run_yt_download(task_id: str, url: str, custom_title: Optional[str], categor
 
 @app.post("/api/youtube/download")
 async def start_youtube_download(req: YoutubeDownloadRequest, background_tasks: BackgroundTasks):
+    url = validate_video_url(req.url)
     task_id = str(uuid.uuid4())
     download_tasks[task_id] = {
         "status": "starting",
         "percent": 0,
-        "url": req.url,
+        "url": url,
         "cancelled": False
     }
+    download_task_timestamps[task_id] = time.time()
     background_tasks.add_task(
         run_yt_download,
         task_id=task_id,
-        url=req.url,
+        url=url,
         custom_title=req.title,
         category=req.category,
         tags=req.tags,
@@ -730,6 +1084,7 @@ async def start_youtube_download(req: YoutubeDownloadRequest, background_tasks: 
 @app.post("/api/youtube/cancel/{task_id}")
 def cancel_youtube_download(task_id: str):
     logger.info(f"Cancellation requested for task {task_id}")
+    download_task_timestamps[task_id] = time.time()
     if task_id in download_tasks:
         download_tasks[task_id]["cancelled"] = True
         download_tasks[task_id]["status"] = "cancelled"
@@ -744,8 +1099,10 @@ def cancel_youtube_download(task_id: str):
 
 @app.get("/api/youtube/status/{task_id}")
 def check_download_status(task_id: str):
+    cleanup_stale_download_tasks()
     if task_id not in download_tasks:
         raise HTTPException(status_code=404, detail="Task not found")
+    download_task_timestamps[task_id] = time.time()
     return download_tasks[task_id]
 
 # --- Presets API ---
@@ -756,30 +1113,100 @@ def get_presets():
 
 @app.post("/api/presets")
 def save_preset(preset: PresetModel):
-    presets = load_json(PRESETS_FILE, [])
-    new_preset = preset.dict()
-    if not new_preset.get("id"):
-        new_preset["id"] = f"preset-{uuid.uuid4().hex[:8]}"
-        presets.append(new_preset)
-    else:
-        updated = False
-        for idx, p in enumerate(presets):
-            if p["id"] == new_preset["id"]:
-                presets[idx] = new_preset
-                updated = True
-                break
-        if not updated:
+    with _DATA_LOCK:
+        presets = load_json(PRESETS_FILE, [])
+        new_preset = preset.model_dump()
+        if not new_preset.get("id"):
+            new_preset["id"] = f"preset-{uuid.uuid4().hex[:8]}"
             presets.append(new_preset)
-            
-    save_json(PRESETS_FILE, presets)
-    return new_preset
+        else:
+            updated = False
+            for idx, p in enumerate(presets):
+                if p["id"] == new_preset["id"]:
+                    presets[idx] = new_preset
+                    updated = True
+                    break
+            if not updated:
+                presets.append(new_preset)
+
+        save_json(PRESETS_FILE, presets)
+        return new_preset
 
 @app.delete("/api/presets/{preset_id}")
 def delete_preset(preset_id: str):
-    presets = load_json(PRESETS_FILE, [])
-    new_presets = [p for p in presets if p["id"] != preset_id]
-    save_json(PRESETS_FILE, new_presets)
-    return {"status": "deleted"}
+    with _DATA_LOCK:
+        presets = load_json(PRESETS_FILE, [])
+        new_presets = [p for p in presets if p["id"] != preset_id]
+        save_json(PRESETS_FILE, new_presets)
+        return {"status": "deleted"}
+
+def _is_local_websocket(websocket: WebSocket) -> bool:
+    client = websocket.client
+    if client is None:
+        return False
+    return (client.host or "") in ("127.0.0.1", "::1", "localhost")
+
+@app.websocket("/ws")
+async def playback_websocket(websocket: WebSocket):
+    token = (
+        websocket.query_params.get("token")
+        or websocket.cookies.get(API_TOKEN_COOKIE)
+        or websocket.headers.get("x-rpg-token")
+        or ""
+    ).strip()
+    if not _is_token_valid(token):
+        await websocket.close(code=4401)
+        return
+
+    role = (websocket.query_params.get("role") or "remote").strip().lower()
+    if role not in ("host", "remote"):
+        await websocket.close(code=4404)
+        return
+    if role == "host" and not _is_local_websocket(websocket):
+        # Only the desktop player may be authoritative. Remotes cannot
+        # hijack playback state even if they know the API token.
+        await websocket.close(code=4403)
+        return
+
+    await websocket.accept()
+
+    if role == "host":
+        await playback_hub.set_host(websocket)
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    message = json.loads(raw)
+                except Exception:
+                    continue
+                if message.get("type") == "state" and isinstance(message.get("state"), dict):
+                    await playback_hub.publish_state(message["state"])
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await playback_hub.remove_host(websocket)
+    else:
+        await playback_hub.add_remote(websocket)
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    message = json.loads(raw)
+                except Exception:
+                    continue
+                if message.get("type") == "command" and isinstance(message.get("command"), dict):
+                    await playback_hub.forward_command(websocket, message["command"])
+                elif message.get("type") == "request_state" and playback_hub.last_state is not None:
+                    await websocket.send_text(
+                        json.dumps(
+                            {"type": "state", "state": playback_hub.last_state},
+                            ensure_ascii=False,
+                        )
+                    )
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await playback_hub.remove_remote(websocket)
 
 # Serve frontend build if exists
 if STATIC_DIR.exists():
@@ -791,7 +1218,9 @@ if __name__ == "__main__":
     local_ip = get_local_ip()
     print("=" * 60)
     print(" RPG Music & Ambience Studio")
-    print(f" Local Web:   http://localhost:{port}")
-    print(f" Android/LAN: http://{local_ip}:{port}")
+    token_q = quote(API_TOKEN, safe='')
+    print(f" Local Web:   http://localhost:{port}/?token={token_q}")
+    print(f" Android/LAN: http://{local_ip}:{port}/?token={token_q}")
+    print(f" Data dir:    {STORAGE_ROOT}")
     print("=" * 60)
     uvicorn.run(app, host="0.0.0.0", port=port)

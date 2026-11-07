@@ -113,6 +113,13 @@ def main():
     except Exception as e:
         err_msg = str(e)
         print(f"ERROR:{err_msg}", flush=True)
+        # Do not leave a partially downloaded/converted file that the
+        # library scanner would later expose as a broken track.
+        for partial in library_dir.glob(f"{args.file_id}.*"):
+            try:
+                partial.unlink(missing_ok=True)
+            except Exception:
+                pass
         sys.exit(1)
     finally:
         if temp_cookie_copy and os.path.exists(temp_cookie_copy):

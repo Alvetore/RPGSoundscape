@@ -11,6 +11,19 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        headers: {
+          // The backend requires a token even for localhost. start_dev.bat
+          // generates one shared token for the backend and this proxy.
+          'X-RPG-Token': process.env.RPG_API_TOKEN || '',
+        },
+      },
+      '/ws': {
+        target: 'ws://localhost:8000',
+        ws: true,
+        changeOrigin: true,
+        headers: {
+          'X-RPG-Token': process.env.RPG_API_TOKEN || '',
+        },
       }
     }
   },

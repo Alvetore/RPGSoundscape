@@ -69,6 +69,13 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
   const [showCookieGuide, setShowCookieGuide] = useState(false);
   const [isUploadingCookie, setIsUploadingCookie] = useState(false);
   const cookieFileInputRef = useRef<HTMLInputElement | null>(null);
+  const onDownloadedRef = useRef(onDownloaded);
+
+  // Keep the latest callback without restarting the polling interval when
+  // the parent re-renders (the audio engine updates state continuously).
+  useEffect(() => {
+    onDownloadedRef.current = onDownloaded;
+  }, [onDownloaded]);
 
   // Fetch cookie status
   const fetchCookieStatus = async () => {
@@ -108,7 +115,7 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
         if (data.status === 'completed') {
           clearInterval(interval);
           setDownloadTaskId(null);
-          onDownloaded();
+          onDownloadedRef.current();
         } else if (data.status === 'error') {
           clearInterval(interval);
           setDownloadError(data.error || 'Ошибка при скачивании аудио');
@@ -126,7 +133,7 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [downloadTaskId, onDownloaded]);
+  }, [downloadTaskId]);
 
   if (!isOpen) return null;
 
@@ -674,7 +681,7 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
                     onChange={(e) => handleBrowserChange(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
                   >
-                    <option value="auto">Авто (cookies.txt если есть, иначе напрямую из браузера)</option>
+                    <option value="auto">Авто (cookies.txt если есть, иначе без cookies)</option>
                     <option value="file">Только загруженный cookies.txt</option>
                     <option value="chrome">Google Chrome (требует закрытого Chrome)</option>
                     <option value="firefox">Mozilla Firefox</option>

@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { 
   X, 
   Smartphone, 
   Wifi, 
-  ExternalLink, 
   Copy, 
   Check, 
   Layers, 
-  ShieldCheck,
   Tablet
 } from 'lucide-react';
 import { AppInfo } from '../types';
+import { getApiToken } from '../audio/clientRole';
 
 interface MobileConnectModalProps {
   isOpen: boolean;
@@ -30,13 +30,27 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
 
   const lanIp = appInfo?.lan_ip || window.location.hostname;
   const port = window.location.port || '8000';
-  const fullUrl = `http://${lanIp}:${port}`;
+  const currentToken = getApiToken();
+  // access_url already contains the API token and the actual port. Without
+  // it the phone would get a 401 from the token-protected backend.
+  const fullUrl =
+    appInfo?.access_url ||
+    `http://${lanIp}:${port}/${currentToken ? `?token=${encodeURIComponent(currentToken)}&role=remote` : ''}`;
 
-  // QR Code URL via reliable public API or svg
-  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(fullUrl)}&color=eab308&bgcolor=151922`;
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(fullUrl);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+    } catch {
+      // Clipboard API needs a secure context; plain LAN HTTP often lacks it.
+      const textarea = document.createElement('textarea');
+      textarea.value = fullUrl;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -75,10 +89,13 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
           {/* QR Code and URL */}
           <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-900/90 p-4 rounded-xl border border-slate-800">
             <div className="w-36 h-36 bg-rpg-panel rounded-lg p-2 border border-slate-700 flex items-center justify-center shrink-0">
-              <img
-                src={qrCodeUrl}
-                alt="QR Code"
-                className="w-full h-full object-contain rounded"
+              <QRCodeSVG
+                value={fullUrl}
+                size={128}
+                bgColor="#151922"
+                fgColor="#eab308"
+                level="M"
+                title="QR-код для подключения телефона"
               />
             </div>
 
@@ -117,7 +134,7 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
               <li>Подключите телефон/планшет к <b>той же Wi-Fi сети</b>, что и этот компьютер.</li>
               <li>Откройте ссылку в Google Chrome на Android.</li>
               <li>Нажмите в меню Chrome <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b> для полноэкранного режима без рамок.</li>
-              <li>Звук может воспроизводиться как через колонки компьютера, так и автономно!</li>
+              <li>Телефон работает как <b>пульт</b>: команды передаются на ПК по WebSocket, а звук идёт через колонки компьютера.</li>
             </ol>
           </div>
 

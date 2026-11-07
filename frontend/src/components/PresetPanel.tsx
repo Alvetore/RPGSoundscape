@@ -39,8 +39,8 @@ export const PresetPanel: React.FC<PresetPanelProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Атмосфера');
-  const [icon, setIcon] = useState('beer');
+  const [category, setCategory] = useState('Custom');
+  const icon = 'beer';
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
   const getCategoryIcon = (iconName?: string) => {
@@ -91,18 +91,27 @@ export const PresetPanel: React.FC<PresetPanelProps> = ({
     };
 
     try {
-      await fetch('/api/presets', {
+      const res = await fetch('/api/presets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPreset)
       });
+      if (!res.ok) {
+        let detail = '';
+        try {
+          detail = (await res.json()).detail || '';
+        } catch {
+          // ignore non-JSON error body
+        }
+        throw new Error(detail || `HTTP ${res.status}`);
+      }
       setIsCreating(false);
       setName('');
       setDescription('');
       onRefreshPresets();
     } catch (err) {
       console.error('Failed to save preset:', err);
-      alert('Ошибка при сохранении пресета');
+      alert(`Ошибка при сохранении пресета: ${err instanceof Error ? err.message : ''}`);
     }
   };
 
@@ -137,17 +146,25 @@ export const PresetPanel: React.FC<PresetPanelProps> = ({
     reader.onload = async (event) => {
       try {
         const imported = JSON.parse(event.target?.result as string);
-        if (Array.isArray(imported)) {
-          for (const p of imported) {
-            await fetch('/api/presets', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(p)
-            });
-          }
-          onRefreshPresets();
-          alert('Пресеты успешно импортированы!');
+        if (!Array.isArray(imported)) {
+          alert('Некорректный формат: ожидается JSON-массив пресетов.');
+          return;
         }
+        let failed = 0;
+        for (const p of imported) {
+          const res = await fetch('/api/presets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(p)
+          });
+          if (!res.ok) failed += 1;
+        }
+        onRefreshPresets();
+        alert(
+          failed > 0
+            ? `Импорт завершён с ошибками: ${failed} из ${imported.length}.`
+            : 'Пресеты успешно импортированы!'
+        );
       } catch (err) {
         alert('Некорректный JSON файл');
       }
@@ -369,7 +386,15 @@ export const PresetPanel: React.FC<PresetPanelProps> = ({
           <label className="cursor-pointer hover:text-slate-300 flex items-center gap-1 transition-colors">
             <Upload className="w-3.5 h-3.5" />
             <span>Импорт JSON</span>
-            <input type="file" accept=".json" onChange={handleImportJSON} className="hidden" />
+            <input
+              type="file"
+              accept=".json"
+              onChange={(e) => {
+                handleImportJSON(e);
+                e.target.value = '';
+              }}
+              className="hidden"
+            />
           </label>
           <span>•</span>
           <button

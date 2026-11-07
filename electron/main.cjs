@@ -1,12 +1,18 @@
 const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn, execFileSync } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 
+// Keep app.getPath('userData') predictable and aligned with run.py
+// (%APPDATA%\RPGSoundscape\storage) so both launch methods share data.
+app.setName('RPGSoundscape');
+
 let mainWindow = null;
 let pythonProcess = null;
 let backendLogs = [];
+let backendToken = crypto.randomBytes(32).toString('base64url');
 
 function getRootDir() {
   if (app.isPackaged) {
@@ -24,6 +30,19 @@ function getRootDir() {
 
 const ROOT_DIR = getRootDir();
 const PORT = 8000;
+
+function getDataDir() {
+  return path.join(app.getPath('userData'), 'storage');
+}
+
+function readBackendToken() {
+  try {
+    const tokenPath = path.join(getDataDir(), 'data', '.api_token');
+    return fs.readFileSync(tokenPath, 'utf8').trim();
+  } catch (e) {
+    return '';
+  }
+}
 
 function appendLog(line) {
   const formatted = `[${new Date().toLocaleTimeString()}] ${line}`;
@@ -43,7 +62,7 @@ function testPython(candidate) {
     if (pyDir) {
       env.PATH = `${pyDir};${path.join(pyDir, 'Scripts')};${path.join(pyDir, 'Library', 'bin')};${env.PATH || ''}`;
     }
-    const res = execFileSync(candidate, ['-c', 'import fastapi, yt_dlp, uvicorn; print("OK")'], {
+    const res = execFileSync(candidate, ['-c', 'import fastapi, yt_dlp, uvicorn, multipart; print("OK")'], {
       timeout: 3500,
       encoding: 'utf-8',
       env: env,
@@ -100,7 +119,12 @@ function findPython() {
 function checkServerReady(port) {
   return new Promise((resolve) => {
     const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
-      resolve(res.statusCode === 200);
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        resolve(res.statusCode === 200 && body.includes('RPG Music'));
+      });
     });
     req.on('error', () => resolve(false));
     req.setTimeout(2000, () => {
@@ -127,8 +151,24 @@ function startBackend() {
     // Check if already running (e.g. from a previous instance or terminal)
     const alreadyUp = await checkServerReady(PORT);
     if (alreadyUp) {
-      appendLog(`Backend is already alive on port ${PORT}`);
+      const existingToken = readBackendToken();
+      if (existingToken) {
+        backendToken = existingToken;
+        appendLog(`Backend is already alive on port ${PORT}; reused its API token`);
+      } else {
+        appendLog(`Backend is already alive on port ${PORT}, but its API token was not found`);
+      }
       return resolve(true);
+    }
+
+    // Reuse the persisted token so an already paired phone stays authorized
+    // after the desktop app restarts.
+    const storedToken = readBackendToken();
+    if (storedToken) {
+      backendToken = storedToken;
+      appendLog('Reusing persisted API token');
+    } else {
+      backendToken = crypto.randomBytes(32).toString('base64url');
     }
 
     const pyExe = findPython();
@@ -167,7 +207,9 @@ function startBackend() {
           PORT: String(PORT),
           PATH: envPath,
           PYTHONPATH: backendDir,
-          PYTHONUNBUFFERED: '1'
+          PYTHONUNBUFFERED: '1',
+          RPG_DATA_DIR: getDataDir(),
+          RPG_API_TOKEN: backendToken
         },
         stdio: 'pipe',
       });
@@ -238,26 +280,50 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
+      webSecurity: true,
     },
   });
 
-  mainWindow.loadURL(`http://localhost:${PORT}`);
+  const tokenQuery = backendToken ? `?token=${encodeURIComponent(backendToken)}` : '';
+  mainWindow.loadURL(`http://127.0.0.1:${PORT}/${tokenQuery}`);
+
+  // The application is a single local page. Never navigate the main window
+  // to external sites or open untrusted popup windows.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith(`http://127.0.0.1:${PORT}`)) {
+      event.preventDefault();
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
-app.whenReady().then(async () => {
-  appendLog('RPG Soundscape Studio starting up in Electron...');
-  const ready = await startBackend();
-  createWindow();
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
-});
+
+  app.whenReady().then(async () => {
+    appendLog('RPG Soundscape Studio starting up in Electron...');
+    await startBackend();
+    createWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+}
 
 function cleanup() {
   if (pythonProcess) {

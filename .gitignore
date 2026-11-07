@@ -16,6 +16,7 @@ __pycache__/
 
 # Sensitive data / personal cookies
 backend/data/cookies.txt
+backend/data/.api_token
 *.pem
 *.key
 .env

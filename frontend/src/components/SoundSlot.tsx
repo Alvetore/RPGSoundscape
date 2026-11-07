@@ -190,7 +190,7 @@ export const SoundSlot: React.FC<SoundSlotProps> = ({
                 </button>
 
                 <button
-                  onClick={() => engine.getSlot(index)?.stop()}
+                  onClick={() => engine.stopSlot(index)}
                   className="w-8 h-9 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors border border-slate-700/60"
                   title="Остановить и перемотать в начало"
                 >

@@ -1,5 +1,9 @@
 // SoundEngine.ts - High performance Web Audio Engine for up to 16 channels
 
+import type { PresetSlot } from '../types';
+import { RemoteSoundEngine } from './RemoteEngine';
+import { getClientRole } from './clientRole';
+
 export interface ChannelState {
   id: number;
   trackId: string | null;
@@ -18,6 +22,42 @@ export interface ChannelState {
 }
 
 export type ChannelCallback = (channels: ChannelState[]) => void;
+
+export interface TrackInput {
+  id: string;
+  title: string;
+  filename: string;
+  url?: string;
+}
+
+export interface ISoundEngine {
+  subscribe(callback: ChannelCallback): () => void;
+  getStates(): ChannelState[];
+  loadTrackToSlot(slotIndex: number, track: TrackInput, autoPlay?: boolean): void;
+  togglePlay(slotIndex: number): void;
+  stopSlot(slotIndex: number): void;
+  setVolume(slotIndex: number, volume: number): void;
+  setLoop(slotIndex: number, loop: boolean): void;
+  setPan(slotIndex: number, pan: number): void;
+  setPlaybackRate(slotIndex: number, rate: number): void;
+  seek(slotIndex: number, time: number): void;
+  toggleMute(slotIndex: number): void;
+  toggleSolo(slotIndex: number): void;
+  clearSlot(slotIndex: number): void;
+  setMasterVolume(volume: number): void;
+  getMasterVolume(): number;
+  getMasterMuted(): boolean;
+  isHostConnected(): boolean;
+  toggleMasterMute(): boolean;
+  stopAll(fadeOutSec?: number): void;
+  playAll(): void;
+  applyPreset(
+    presetSlots: PresetSlot[],
+    crossfadeSec?: number,
+    libraryTracks?: TrackInput[]
+  ): void | Promise<void>;
+  destroy(): void;
+}
 
 class ChannelSlot {
   id: number;
@@ -38,6 +78,8 @@ class ChannelSlot {
   isMuted: boolean = false;
   isSolo: boolean = false;
   isPlaying: boolean = false;
+  onStopComplete: (() => void) | null = null;
+  private stopTimer: ReturnType<typeof setTimeout> | null = null;
 
   private dataArray: Uint8Array;
 
@@ -74,6 +116,9 @@ class ChannelSlot {
     this.audio.addEventListener("ended", () => {
       if (!this.loop) {
         this.isPlaying = false;
+        // Rewind one-shots so the next Play starts the sound again instead
+        // of instantly firing "ended" at the last sample.
+        this.audio.currentTime = 0;
       }
     });
 
@@ -103,6 +148,10 @@ class ChannelSlot {
   }
 
   loadTrack(track: { id: string; title: string; filename: string; url?: string }, autoPlay: boolean = false) {
+    if (this.stopTimer) {
+      clearTimeout(this.stopTimer);
+      this.stopTimer = null;
+    }
     this.trackId = track.id;
     this.title = track.title;
     this.filename = track.filename;
@@ -122,10 +171,17 @@ class ChannelSlot {
 
   async play() {
     if (!this.audio.src) return;
+    if (this.stopTimer) {
+      clearTimeout(this.stopTimer);
+      this.stopTimer = null;
+    }
     this.ensureSourceNode();
     try {
       if (this.ctx.state === "suspended") {
         await this.ctx.resume();
+      }
+      if (this.audio.ended) {
+        this.audio.currentTime = 0;
       }
       await this.audio.play();
       this.isPlaying = true;
@@ -140,15 +196,24 @@ class ChannelSlot {
   }
 
   stop(fadeOutSec: number = 0) {
+    if (this.stopTimer) {
+      clearTimeout(this.stopTimer);
+      this.stopTimer = null;
+    }
     if (fadeOutSec > 0 && this.isPlaying) {
       const now = this.ctx.currentTime;
       this.gainNode.gain.cancelScheduledValues(now);
       this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now);
       this.gainNode.gain.linearRampToValueAtTime(0.0001, now + fadeOutSec);
-      setTimeout(() => {
+      this.stopTimer = setTimeout(() => {
+        this.stopTimer = null;
         this.pause();
         this.audio.currentTime = 0;
-        this.applyVolume();
+        if (this.onStopComplete) {
+          this.onStopComplete();
+        } else {
+          this.applyVolume();
+        }
       }, fadeOutSec * 1000);
     } else {
       this.pause();
@@ -204,12 +269,15 @@ class ChannelSlot {
     }
 
     this.gainNode.gain.cancelScheduledValues(now);
+    this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now);
     this.gainNode.gain.linearRampToValueAtTime(effectiveVolume, now + 0.05);
   }
 
   fadeTo(targetVolume: number, durationSec: number) {
     const now = this.ctx.currentTime;
-    this.volume = targetVolume;
+    // Do not mutate this.volume here: it is the user-facing fader value.
+    // Crossfades only need to automate the gain node, otherwise channels
+    // left out of the new preset stay silent at 0.001 forever.
     this.gainNode.gain.cancelScheduledValues(now);
     this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now);
     this.gainNode.gain.linearRampToValueAtTime(targetVolume, now + durationSec);
@@ -255,7 +323,7 @@ class ChannelSlot {
   }
 }
 
-export class SoundEngine {
+export class SoundEngine implements ISoundEngine {
   private ctx: AudioContext;
   private masterGain: GainNode;
   private slots: ChannelSlot[] = [];
@@ -264,6 +332,7 @@ export class SoundEngine {
   private isMasterMuted: boolean = false;
   private listeners: ChannelCallback[] = [];
   private animationFrameId: number | null = null;
+  private lastNotifyAt: number = 0;
 
   constructor(channelCount: number = 16) {
     this.totalChannels = channelCount;
@@ -275,15 +344,24 @@ export class SoundEngine {
     this.masterGain.connect(this.ctx.destination);
 
     for (let i = 0; i < this.totalChannels; i++) {
-      this.slots.push(new ChannelSlot(i, this.ctx, this.masterGain));
+      const slot = new ChannelSlot(i, this.ctx, this.masterGain);
+      // After a fade-out completes, restore the effective gain with the
+      // current Solo/Mute state instead of blindly restoring the fader.
+      slot.onStopComplete = () => this.updateSoloMuteState();
+      this.slots.push(slot);
     }
 
     this.startStateLoop();
   }
 
   private startStateLoop() {
-    const loop = () => {
-      this.notifyListeners();
+    const loop = (timestamp: number) => {
+      // VU meters do not need 60 React renders per second. 10 Hz keeps the
+      // UI responsive and avoids burning CPU while the app is idle.
+      if (timestamp - this.lastNotifyAt >= 100) {
+        this.lastNotifyAt = timestamp;
+        this.notifyListeners();
+      }
       this.animationFrameId = requestAnimationFrame(loop);
     };
     this.animationFrameId = requestAnimationFrame(loop);
@@ -314,7 +392,7 @@ export class SoundEngine {
 
   loadTrackToSlot(
     slotIndex: number,
-    track: { id: string; title: string; filename: string; url?: string },
+    track: TrackInput,
     autoPlay: boolean = false
   ) {
     if (this.slots[slotIndex]) {
@@ -333,10 +411,22 @@ export class SoundEngine {
     }
   }
 
+  stopSlot(slotIndex: number) {
+    const slot = this.slots[slotIndex];
+    if (slot) {
+      slot.stop();
+    }
+  }
+
   setVolume(slotIndex: number, volume: number) {
     const slot = this.slots[slotIndex];
     if (slot) {
       slot.setVolume(volume);
+      // Re-apply Solo after a fader change, otherwise moving the volume on
+      // a non-solo channel makes it audible during Solo.
+      if (this.slots.some((s) => s.isSolo)) {
+        this.updateSoloMuteState();
+      }
     }
   }
 
@@ -409,6 +499,14 @@ export class SoundEngine {
     return this.masterVolume;
   }
 
+  getMasterMuted(): boolean {
+    return this.isMasterMuted;
+  }
+
+  isHostConnected(): boolean {
+    return true;
+  }
+
   toggleMasterMute() {
     this.isMasterMuted = !this.isMasterMuted;
     const now = this.ctx.currentTime;
@@ -438,21 +536,11 @@ export class SoundEngine {
    * Smoothly apply a preset across channels with optional crossfade!
    */
   async applyPreset(
-    presetSlots: {
-      slotIndex: number;
-      trackId?: string | null;
-      title?: string;
-      filename?: string;
-      volume?: number;
-      loop?: boolean;
-      active?: boolean;
-      pan?: number;
-      playbackRate?: number;
-    }[],
+    presetSlots: PresetSlot[],
     crossfadeSec: number = 1.5,
-    libraryTracks: { id: string; title: string; filename: string }[] = []
+    libraryTracks: TrackInput[] = []
   ) {
-    // 1. If crossfade requested, fade out currently playing slots that are changing
+    // 1. If crossfade requested, fade out currently playing slots
     if (crossfadeSec > 0) {
       for (const slot of this.slots) {
         if (slot.isPlaying) {
@@ -462,10 +550,13 @@ export class SoundEngine {
       await new Promise((resolve) => setTimeout(resolve, crossfadeSec * 800));
     }
 
-    // 2. Stop everything
+    // 2. Stop everything and restore effective gain for channels that are
+    // not part of the new preset. Fading must not leave them at 0.001.
     this.slots.forEach((s) => s.stop());
+    this.updateSoloMuteState();
 
-    // 3. Apply new preset slots
+    // 3. Load and configure all preset slots first, without starting them.
+    const activeSlots: ChannelSlot[] = [];
     for (const p of presetSlots) {
       const slot = this.slots[p.slotIndex];
       if (!slot) continue;
@@ -491,13 +582,25 @@ export class SoundEngine {
       if (p.playbackRate !== undefined) slot.setPlaybackRate(p.playbackRate);
 
       if (p.active && track) {
-        if (crossfadeSec > 0) {
-          slot.gainNode.gain.setValueAtTime(0.0001, this.ctx.currentTime);
-          slot.play();
-          slot.fadeTo(slot.volume, crossfadeSec);
-        } else {
-          slot.play();
-        }
+        activeSlots.push(slot);
+      }
+    }
+
+    this.updateSoloMuteState();
+    const hasSolo = this.slots.some((s) => s.isSolo);
+
+    // 4. Start active slots using the effective gain (respects Solo/Mute).
+    for (const slot of activeSlots) {
+      const effectiveTarget =
+        slot.isMuted || (hasSolo && !slot.isSolo) ? 0.0001 : slot.volume;
+
+      if (crossfadeSec > 0) {
+        slot.gainNode.gain.setValueAtTime(0.0001, this.ctx.currentTime);
+        slot.play();
+        slot.fadeTo(effectiveTarget, crossfadeSec);
+      } else {
+        slot.play();
+        slot.applyVolume(hasSolo);
       }
     }
   }
@@ -511,12 +614,14 @@ export class SoundEngine {
   }
 }
 
-// Global Singleton
-let soundEngineInstance: SoundEngine | null = null;
+// Global Singleton. The desktop (loopback) is the authoritative player;
+// LAN clients use a websocket-backed remote engine that sends commands to it.
+let soundEngineInstance: ISoundEngine | null = null;
 
-export function getSoundEngine(): SoundEngine {
+export function getSoundEngine(): ISoundEngine {
   if (!soundEngineInstance) {
-    soundEngineInstance = new SoundEngine(16);
+    soundEngineInstance =
+      getClientRole() === 'remote' ? new RemoteSoundEngine(16) : new SoundEngine(16);
   }
   return soundEngineInstance;
 }
