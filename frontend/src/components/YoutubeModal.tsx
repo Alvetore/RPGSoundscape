@@ -416,15 +416,24 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
               </div>
             </div>
 
-            {/* Error Message with action to show cookie settings */}
+            {/* Error Message with action to show cookie settings or drag & drop alternative */}
             {downloadError && (
-              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-2 animate-in fade-in">
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-2.5 animate-in fade-in">
                 <div className="flex items-start gap-2">
                   <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <p className="font-semibold text-amber-400">Внимание от YouTube:</p>
                     <p className="mt-0.5 text-slate-300 text-[11px] leading-relaxed">{downloadError}</p>
                   </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-slate-900/80 border border-amber-500/20 text-[11px] text-slate-300 space-y-1">
+                  <p className="font-semibold text-amber-400 flex items-center gap-1.5">
+                    <span>💡</span> Быстрое решение в 1 клик:
+                  </p>
+                  <p className="text-slate-400 text-[10.5px] leading-relaxed">
+                    Скачайте MP3 через бота (например <code className="text-amber-300 bg-slate-800 px-1 py-0.5 rounded">@SaveYoutubeBot</code> в Telegram) или любой сайт-конвертер и <b>просто перетащите файл мышкой прямо в окно программы</b> — трек мгновенно добавится в оффлайн-библиотеку!
+                  </p>
                 </div>
 
                 {!cookieStatus?.has_cookies_file && (

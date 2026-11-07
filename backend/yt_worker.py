@@ -61,10 +61,16 @@ def main():
         'progress_hooks': [progress_hook],
     }
 
-    # Cookie configuration
+    # Cookie configuration with isolated copy
+    temp_cookie_copy = None
     if args.cookies_file and os.path.exists(args.cookies_file) and os.path.getsize(args.cookies_file) > 10:
-        opts['cookiefile'] = args.cookies_file
-        opts['extractor_args'] = {'youtube': {'player_client': ['web', 'mweb']}}
+        import shutil
+        temp_cookie_copy = library_dir.parent / "data" / f"worker_cookie_{args.file_id}.txt"
+        try:
+            shutil.copyfile(args.cookies_file, temp_cookie_copy)
+            opts['cookiefile'] = str(temp_cookie_copy)
+        except Exception:
+            opts['cookiefile'] = args.cookies_file
     elif args.browser in ("chrome", "firefox", "edge", "opera", "brave", "vivaldi"):
         opts['cookiesfrombrowser'] = (args.browser,)
 
@@ -108,6 +114,12 @@ def main():
         err_msg = str(e)
         print(f"ERROR:{err_msg}", flush=True)
         sys.exit(1)
+    finally:
+        if temp_cookie_copy and os.path.exists(temp_cookie_copy):
+            try:
+                os.remove(temp_cookie_copy)
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     main()

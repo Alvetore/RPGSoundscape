@@ -258,6 +258,7 @@ init_default_presets()
 
 def build_ydl_opts(for_download: bool = False, custom_browser: Optional[str] = None) -> Dict[str, Any]:
     """Constructs resilient yt-dlp options supporting cookies, fallback clients, and ffmpeg."""
+    import shutil
     settings = get_settings()
     cookie_source = custom_browser or settings.get("cookie_source", "auto")
 
@@ -271,10 +272,15 @@ def build_ydl_opts(for_download: bool = False, custom_browser: Optional[str] = N
         }
     }
 
-    # 1. Cookie file check (cookies.txt)
+    # 1. Cookie file check (cookies.txt) - isolated temporary copy to prevent yt-dlp from mutating original
     if (cookie_source in ("auto", "file")) and COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10:
-        opts['cookiefile'] = str(COOKIES_FILE)
-        opts['extractor_args'] = {'youtube': {'player_client': ['web', 'mweb']}}
+        temp_cookies = DATA_DIR / f"temp_session_{uuid.uuid4().hex[:6]}.txt"
+        try:
+            shutil.copyfile(COOKIES_FILE, temp_cookies)
+            opts['cookiefile'] = str(temp_cookies)
+        except Exception as e:
+            logger.warning(f"Could not create safe cookie session copy: {e}")
+            opts['cookiefile'] = str(COOKIES_FILE)
     elif cookie_source in ("chrome", "firefox", "edge", "opera", "brave", "vivaldi"):
         try:
             opts['cookiesfrombrowser'] = (cookie_source,)
@@ -298,25 +304,12 @@ def translate_yt_error(err_str: str) -> str:
     """Translates technical yt-dlp / YouTube errors into clear, actionable advice."""
     lower = err_str.lower()
     if "sign in to confirm you’re not a bot" in lower or "sign in to confirm" in lower:
-        cookie_info = inspect_cookie_file(COOKIES_FILE)
-        if not cookie_info["has_cookies_file"]:
-            return (
-                "YouTube заблокировал анонимный запрос проверкой 'Подтвердите, что вы не бот'. "
-                "Чтобы скачивать без ограничений, загрузите файл cookies.txt во вкладке 'Настройки Cookies' "
-                "(экспортируется за 1 минуту через расширение 'Get cookies.txt LOCALLY' в браузере) "
-                "или добавьте готовый аудиофайл через вкладку «Библиотека» → «Загрузить файл»."
-            )
-        elif not cookie_info["is_authenticated"]:
-            return (
-                "YouTube отклонил запрос: в загруженном файле cookies.txt отсутствует токен авторизации LOGIN_INFO. "
-                "Запрос был распознан как анонимный. Пожалуйста, откройте вкладку youtube.com под вашим аккаунтом Google, "
-                "включите в расширении 'Get cookies.txt LOCALLY' экспорт HttpOnly cookies и экспортируйте свежий файл."
-            )
-        else:
-            return (
-                "YouTube заблокировал сессию проверкой бота. Срок действия авторизационных cookies мог истечь. "
-                "Рекомендуется экспортировать свежий файл cookies.txt из браузера или воспользоваться прямой загрузкой файла в Библиотеку."
-            )
+        return (
+            "YouTube заблокировал прямое скачивание защитой Google BotGuard (требуется PO Token). "
+            "В последнее время YouTube жестко ограничивает скачивание через сторонние плееры даже при авторизации. "
+            "Рекомендуем скачать этот трек в браузере или через Telegram-бота (@SaveYoutubeBot) "
+            "и перетащить файл напрямую в окно программы — он мгновенно добавится в вашу библиотеку!"
+        )
     elif "requested format is not available" in lower:
         return (
             "Запрошенный аудиоформат оказался временно недоступен на серверах YouTube. "
@@ -325,17 +318,17 @@ def translate_yt_error(err_str: str) -> str:
     elif "the page needs to be reloaded" in lower:
         return (
             "Сессия YouTube в браузере устарела или страница требует перезагрузки. "
-            "Рекомендуется экспортировать свежий файл cookies.txt или перезапустить браузер."
+            "Рекомендуется обновить страницу в браузере или загрузить файл напрямую."
         )
     elif "video unavailable" in lower:
         return "Данное видео недоступно на YouTube (удалено, заблокировано в регионе или является приватным)."
     elif "could not copy chrome cookie database" in lower or "database is locked" in lower or "failed to decrypt with dpapi" in lower:
         return (
             "Браузер защитил свою базу cookies (защита App-Bound Encryption или база заблокирована открытым браузером). "
-            "Пожалуйста, экспортируйте файл cookies.txt в 1 клик через расширение и загрузите его во вкладке 'Настройки Cookies'."
+            "Пожалуйста, экспортируйте файл cookies.txt через расширение или перетащите скачанный трек в окно приложения."
         )
     elif "timed out" in lower or "timeout" in lower:
-        return "Превышено время ожидания ответа от сервера YouTube или браузера. Попробуйте ещё раз."
+        return "Превышено время ожидания ответа от сервера YouTube. Возможно, канал связи заблокирован или замедлен провайдером."
     elif "failed to decrypt with dpapi" in lower:
         return (
             "Браузер защитил cookies системным шифрованием Windows DPAPI. "
@@ -560,12 +553,13 @@ async def get_youtube_info(payload: dict):
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
 
-    def extract():
-        opts = build_ydl_opts(for_download=False, custom_browser=browser)
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            return ydl.extract_info(url, download=False)
-            
+    session_file = None
     try:
+        opts = build_ydl_opts(for_download=False, custom_browser=browser)
+        session_file = opts.get('cookiefile')
+        def extract():
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(url, download=False)
         info = await asyncio.to_thread(extract)
         return {
             "title": info.get("title", ""),
@@ -579,6 +573,12 @@ async def get_youtube_info(payload: dict):
         logger.error(f"Error fetching YT info: {err_msg}")
         user_friendly = translate_yt_error(err_msg)
         raise HTTPException(status_code=400, detail=user_friendly)
+    finally:
+        if session_file and "temp_session_" in session_file and os.path.exists(session_file):
+            try:
+                os.remove(session_file)
+            except Exception:
+                pass
 
 def run_yt_download(task_id: str, url: str, custom_title: Optional[str], category: str, tags: List[str], browser: Optional[str] = None):
     """Background worker executing yt_worker in an isolated, cancelable child process."""
