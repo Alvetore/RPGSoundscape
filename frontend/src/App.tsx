@@ -1,14 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  UploadCloud,
-  CheckCircle2,
-  Loader2,
-  AlertCircle,
-  Activity,
-  FolderOpen,
-  Bookmark,
-  Volume2,
-} from 'lucide-react';
+import { UploadCloud, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { Header } from './components/Header';
 import { MixerPanel } from './components/MixerPanel';
 import { TouchSoundboard } from './components/TouchSoundboard';
@@ -92,6 +83,7 @@ export const App: React.FC = () => {
       for (const file of validFiles) {
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('filename', file.name);
         formData.append('category', 'Local');
         formData.append('tags', 'upload,dragdrop');
         const res = await fetch('/api/upload', {
@@ -181,6 +173,32 @@ export const App: React.FC = () => {
     fetchPresets();
     fetchInfo();
   }, [fetchLibrary, fetchPresets, fetchInfo]);
+
+  // The native Android shell emits this after a QR-initiated library
+  // transfer has been downloaded and unpacked on the phone.
+  useEffect(() => {
+    const handleAndroidLibraryUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ tracks?: number }>).detail || {};
+      fetchLibrary();
+      fetchPresets();
+      setDropToastIsError(false);
+      setDropToastMessage(
+        typeof detail.tracks === 'number'
+          ? `Перенесено треков с ПК: ${detail.tracks}`
+          : 'Библиотека обновлена'
+      );
+      setTimeout(() => setDropToastMessage(null), 5000);
+    };
+
+    const handleAndroidOpenLibrary = () => setActiveTab('library');
+
+    window.addEventListener('rpg-android-library-updated', handleAndroidLibraryUpdated);
+    window.addEventListener('rpg-android-open-library', handleAndroidOpenLibrary);
+    return () => {
+      window.removeEventListener('rpg-android-library-updated', handleAndroidLibraryUpdated);
+      window.removeEventListener('rpg-android-open-library', handleAndroidOpenLibrary);
+    };
+  }, [fetchLibrary, fetchPresets]);
 
   // Keyboard hotkeys for Game Master (Keys 1-9 toggle play on slots 1-9, Esc stops all)
   useEffect(() => {
@@ -313,71 +331,13 @@ export const App: React.FC = () => {
         onToggleMasterMute={handleToggleMasterMute}
         activeCount={activeCount}
         totalChannels={channels.length || 16}
+        libraryCount={library.length}
+        presetCount={presets.length}
         onOpenYoutubeModal={() => setIsYoutubeModalOpen(true)}
         onOpenMobileModal={() => setIsMobileModalOpen(true)}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
       />
-
-      <section className="relative z-10 hidden max-w-7xl w-full mx-auto px-4 pt-5 sm:block sm:px-6">
-        <div className="rpg-card overflow-hidden p-4 sm:p-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-start gap-3.5">
-            <div className="relative h-11 w-11 shrink-0 rounded-2xl border border-amber-400/25 bg-gradient-to-br from-amber-400/20 to-amber-600/5 text-amber-300 flex items-center justify-center shadow-glow-gold">
-              <Activity className="w-5 h-5" />
-              {activeCount > 0 && (
-                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-4 ring-[#0c0e14]" />
-              )}
-            </div>
-            <div>
-              <div className="rpg-kicker">Session control</div>
-              <h2 className="mt-1 text-base sm:text-lg font-bold tracking-wide text-white font-rpg">
-                Звуковая сцена
-              </h2>
-              <p className="mt-1 text-xs text-slate-400">
-                {activeCount > 0
-                  ? `${activeCount} ${activeCount === 1 ? 'канал' : 'каналов'} звучит прямо сейчас`
-                  : 'Микшер готов — запустите атмосферу из библиотеки или пресета'}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div className="rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
-              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                <Activity className="w-3 h-3 text-emerald-400" />
-                Активны
-              </div>
-              <div className="mt-1 text-lg font-bold text-white font-mono">
-                {activeCount}
-                <span className="text-xs text-slate-500"> / {channels.length || 16}</span>
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
-              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                <FolderOpen className="w-3 h-3 text-sky-400" />
-                Библиотека
-              </div>
-              <div className="mt-1 text-lg font-bold text-white font-mono">{library.length}</div>
-            </div>
-            <div className="rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
-              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                <Bookmark className="w-3 h-3 text-amber-400" />
-                Пресеты
-              </div>
-              <div className="mt-1 text-lg font-bold text-white font-mono">{presets.length}</div>
-            </div>
-            <div className="rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
-              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
-                <Volume2 className="w-3 h-3 text-purple-400" />
-                Мастер
-              </div>
-              <div className="mt-1 text-lg font-bold text-white font-mono">
-                {isMasterMuted ? 'MUTE' : `${Math.round(masterVolume * 100)}%`}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {isRemote && !hostConnected && (
         <div className="bg-amber-500/15 border-b border-amber-500/40 text-amber-300 text-xs text-center py-2 px-4">

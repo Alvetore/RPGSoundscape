@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.RPGSoundscape" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#0c0e14</item>
+        <item name="android:statusBarColor">#090c13</item>
+        <item name="android:navigationBarColor">#090c13</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:colorAccent">#eab308</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+</resources>

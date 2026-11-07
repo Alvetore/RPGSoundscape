@@ -14,10 +14,12 @@ import {
   CheckCircle2, 
   FileAudio,
   FolderPlus,
-  GripVertical
+  GripVertical,
+  ScanLine
 } from 'lucide-react';
 import { YoutubeIcon } from './Icons';
 import { getSoundEngine } from '../audio/SoundEngine';
+import { isAndroidLocalMode, scanAndroidTransfer } from '../audio/androidBridge';
 
 interface LibraryPanelProps {
   library: AudioTrack[];
@@ -44,6 +46,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const androidLocal = isAndroidLocalMode();
 
   // Stop preview playback when the user switches to another tab.
   useEffect(() => {
@@ -113,6 +116,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
         const file = files[i];
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('filename', file.name);
         formData.append('category', 'Local');
         formData.append('tags', 'upload,custom');
 
@@ -198,11 +202,13 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             Пополнить библиотеку
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            Загрузите файлы с диска или скачайте трек с YouTube.
+            {androidLocal
+              ? 'Добавьте файлы с телефона или перенесите всю библиотеку с ПК по QR-коду.'
+              : 'Загрузите файлы с диска или скачайте трек с YouTube.'}
           </p>
         </div>
 
-        <div className="flex w-full items-center gap-2 md:w-auto">
+        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
           <input
             type="file"
             ref={fileInputRef}
@@ -211,6 +217,16 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             multiple
             className="hidden"
           />
+          {androidLocal && (
+            <button
+              onClick={scanAndroidTransfer}
+              className="rpg-btn h-10 flex-1 border-sky-400/30 bg-sky-500/10 px-3.5 text-sky-200 hover:border-sky-300/50 hover:bg-sky-500/20 md:flex-none"
+              title="Сканировать QR-код переноса библиотеки на ПК"
+            >
+              <ScanLine className="h-4 w-4" />
+              <span>Перенести с ПК</span>
+            </button>
+          )}
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
@@ -220,13 +236,15 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({
             <span>{isUploading ? 'Загрузка...' : 'Добавить файлы'}</span>
           </button>
 
-          <button
-            onClick={onOpenYoutubeModal}
-            className="rpg-btn h-10 flex-1 border-red-500/30 bg-red-500/10 px-3.5 text-red-200 hover:border-red-400/50 hover:bg-red-500/20 md:flex-none"
-          >
-            <YoutubeIcon className="h-4 w-4 fill-current" />
-            <span>Скачать с YouTube</span>
-          </button>
+          {!androidLocal && (
+            <button
+              onClick={onOpenYoutubeModal}
+              className="rpg-btn h-10 flex-1 border-red-500/30 bg-red-500/10 px-3.5 text-red-200 hover:border-red-400/50 hover:bg-red-500/20 md:flex-none"
+            >
+              <YoutubeIcon className="h-4 w-4 fill-current" />
+              <span>Скачать с YouTube</span>
+            </button>
+          )}
         </div>
       </div>
 

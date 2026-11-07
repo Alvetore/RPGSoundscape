@@ -38,4 +38,5 @@ export interface AppInfo {
   version: string;
   lan_ip: string;
   access_url: string;
+  transfer_url?: string;
 }

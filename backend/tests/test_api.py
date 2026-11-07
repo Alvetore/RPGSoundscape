@@ -1,7 +1,10 @@
+import io
+import json
 import os
 import shutil
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -118,6 +121,7 @@ def test_preset_crud(client):
     assert created.status_code == 200
     preset = created.json()
     assert preset["id"]
+    assert preset["slots"][0]["filename"] == "campfire_crackles.wav"
 
     presets = client.get("/api/presets", headers=TOKEN_HEADERS).json()
     assert any(item["id"] == preset["id"] for item in presets)
@@ -153,6 +157,52 @@ def test_upload_then_delete_track(client):
     deleted = client.delete(f"/api/library/{track['id']}", headers=TOKEN_HEADERS)
     assert deleted.status_code == 200
     assert not (backend.LIBRARY_DIR / track["filename"]).exists()
+
+
+def test_library_export_contains_audio_and_presets(client):
+    fake_mp3 = b"ID3" + b"\x00" * 4096
+    uploaded = client.post(
+        "/api/upload",
+        headers=TOKEN_HEADERS,
+        data={"category": "Local", "tags": "export,test"},
+        files={"file": ("pytest_export_track.mp3", fake_mp3, "audio/mpeg")},
+    )
+    assert uploaded.status_code == 200
+    track = uploaded.json()
+
+    preset = client.post(
+        "/api/presets",
+        json={
+            "name": "Export scene",
+            "slots": [{"slotIndex": 0, "filename": track["filename"], "volume": 0.8}],
+        },
+        headers=TOKEN_HEADERS,
+    )
+    assert preset.status_code == 200
+
+    response = client.get("/api/library/export", headers=TOKEN_HEADERS)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert int(response.headers["x-rpg-tracks"]) >= 1
+
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    names = archive.namelist()
+    assert "manifest.json" in names
+    assert "library.json" in names
+    assert "presets.json" in names
+    assert f"audio/{track['filename']}" in names
+    assert archive.read(f"audio/{track['filename']}") == fake_mp3
+
+    manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["format"] == "rpg-soundscape-library"
+    assert manifest["tracks"] >= 1
+    assert manifest["presets"] >= 1
+
+    exported_library = json.loads(archive.read("library.json"))
+    assert any(item["id"] == track["id"] for item in exported_library)
+
+    client.delete(f"/api/presets/{preset.json()['id']}", headers=TOKEN_HEADERS)
+    client.delete(f"/api/library/{track['id']}", headers=TOKEN_HEADERS)
 
 
 def test_youtube_info_rejects_non_http_url(client):

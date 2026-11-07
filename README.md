@@ -15,12 +15,13 @@
    - Автоматически поднимает локальный сервер при открытии и чисто выгружает его при закрытии окна.
    - Никаких лишних вкладок и адресных строк браузера.
 
-2. **Адаптированный интерфейс для Android / планшета**:
+2. **Нативное Android-приложение (APK)**:
    - **Нижняя мобильная панель навигации (Bottom Bar)** для удобного переключения большим пальцем.
    - **Тачпад ведущего (Touch Soundboard)** — сетка крупных сенсорных пэдов для мгновенного запуска звуков и петли в 1 касание.
-   - **Wi-Fi пульт**: команды с телефона идут по WebSocket на ПК, звук воспроизводится на колонках компьютера.
+   - **Два режима**: Wi-Fi пульт ПК (команды по WebSocket, звук на колонках компьютера) и автономная оффлайн-библиотека на телефоне.
+   - **Перенос библиотеки по QR-коду**: телефон скачивает с ПК все треки и пресеты по локальной сети и играет их без компьютера.
    - Увеличенные сенсорные регуляторы громкости и элементы управления.
-   - Полная готовность к сборке в нативный `.apk` (Capacitor).
+   - Готовый подписанный APK в GitHub Releases; требуется Android 7.0+.
 
 3. **Скачивание музыки и звуков с YouTube**:
    - Встроенный загрузчик на базе `yt-dlp` и `ffmpeg`.
@@ -70,31 +71,55 @@
 
 ---
 
+## 📸 Скриншоты
+
+**Десктоп**
+
+![Микшер](docs/screenshots/desktop-mixer.png)
+
+| Библиотека | Пресеты сцен |
+| --- | --- |
+| ![Библиотека](docs/screenshots/desktop-library.png) | ![Пресеты](docs/screenshots/desktop-presets.png) |
+
+**Android**
+
+| Оффлайн-библиотека | Подключение к ПК |
+| --- | --- |
+| ![Android библиотека](docs/screenshots/android-local-library.png) | ![Android подключение](docs/screenshots/android-connect.png) |
+
+![Мобильный микшер](docs/screenshots/mobile-mixer.png)
+
+---
+
 ## 📱 Мультиплатформенность: Windows & Android
 
 Архитектура проекта разделена на легковесный оффлайн-движок на базе **Web Audio API** и локальный сервер **FastAPI**:
 
-### Вариант 1. Беспроводной пульт мастера для Android (Wi-Fi) — *Готов к использованию сразу!*
-Приложение автоматически определяет ваш локальный IP-адрес:
-1. Запустите приложение на ноутбуке / ПК через `start.bat`.
-2. Нажмите кнопку **«Android / Планшет»** в верхнем меню приложения — откроется окно с **QR-кодом** и ссылкой вида `http://192.168.x.x:8000/?token=...`.
-3. Наведите камеру Android-смартфона или планшета (находящегося в той же Wi-Fi сети) на QR-код.
-4. Откройте страницу в Chrome и нажмите **«Добавить на главный экран»** (PWA).
-5. Телефон/планшет работает как **пульт мастера**: команды по WebSocket отправляются на ПК, а звук идёт на колонки компьютера. Библиотека и пресеты общие. Ссылка содержит токен доступа: без него сервер вернёт `401 Unauthorized`. Кнопка «Слушать» в библиотеке по-прежнему делает локальное preview на телефоне.
+### Android APK: пульт ПК и автономная библиотека
 
-> 🔐 Не публикуйте ссылку с `?token=...`: она даёт доступ к библиотеке, настройкам cookies и загрузкам. Токен хранится в `%APPDATA%\RPGSoundscape\storage\data\.api_token` и переиспользуется между запусками, поэтому телефон не нужно сопрягать заново каждый раз. Чтобы отозвать доступ, удалите `.api_token` при остановленном приложении.
+APK доступен в [GitHub Releases](https://github.com/Alvetore/RPGSoundscape/releases) (`RPGSoundscape-Android-1.1.0.apk`). Установите его на телефон или планшет (Android 7.0+), подключённый к той же Wi-Fi сети, что и компьютер.
 
-### Вариант 2. Сборка нативного Android APK (Capacitor)
-**Важно:** APK — это пульт, а не автономный плеер. Frontend обращается к `/api/...` и `/ws`, поэтому в `capacitor.config.json` нужно указать адрес backend-а ПК (`server.url`) и передать токен доступа; без этого пульт не подключится к компьютеру. Проект содержит преднастроенные `capacitor.config.json` и `manifest.json`. Чтобы собрать нативный Android APK:
+**Режим 1. Пульт ПК**
+1. Запустите приложение на компьютере.
+2. Нажмите **«Android Пульт»** в верхней панели — откроется окно с QR-кодом.
+3. В Android-приложении нажмите **«Подключиться к пульту ПК»** и отсканируйте QR.
+4. Команды уходят на ПК по WebSocket, а звук играет через колонки компьютера. Библиотека и пресеты общие.
+
+**Режим 2. Автономная библиотека + перенос с ПК**
+1. На компьютере откройте **«Android Пульт» → вкладка «Библиотека»**.
+2. В приложении на телефоне нажмите **«Перенести библиотеку с ПК»** и отсканируйте QR.
+3. Телефон скачает ZIP с метаданными, пресетами и всеми аудиофайлами по Wi-Fi, распакует его во внутреннее хранилище и переключится в локальный режим.
+4. Дальше можно играть треки, менять громкость/панораму/петли, создавать пресеты и загружать новые файлы с телефона — компьютер не нужен.
+
+> QR-код содержит только адрес компьютера в локальной сети и токен доступа. Сами аудиофайлы передаются по Wi-Fi — QR физически не может вместить библиотеку. После переноса файлы лежат в приватном хранилище приложения; повторное сканирование обновляет и дополняет библиотеку.
+
+> 🔐 Не публикуйте ссылку с `?token=...`: она даёт доступ к библиотеке, настройкам cookies и загрузкам. Токен хранится в `%APPDATA%\RPGSoundscape\storage\data\.api_token` и переиспользуется между запусками. Чтобы отозвать доступ, удалите `.api_token` при остановленном приложении.
+
+Сборка APK из исходников:
 ```bash
-cd frontend
-npm install @capacitor/core @capacitor/cli @capacitor/android
-npx cap init "RPG Soundscape" com.rpg.soundscape
-npm run build
-npx cap add android
-npx cap open android
+npm run build:android
 ```
-После этого в открывшейся **Android Studio** нажмите `Build > Build Bundle(s) / APK(s) > Build APK(s)`.
+Скрипт собирает frontend, копирует его в `android/app/src/main/assets/www`, запускает Gradle и кладёт подписанный APK в `release\RPGSoundscape-Android-1.1.0.apk`. Для сборки нужны Android SDK 35 и JDK 17+ (Android Studio JBR подходит). Ключ подписи хранится локально в `android/rpg-release.keystore` и не коммитится — сохраните его, чтобы выпускать обновления поверх установленной версии.
 
 ---
 
@@ -104,9 +129,10 @@ npx cap open android
 
 Вы можете запустить приложение любым удобным способом без ввода команд в терминал:
 
-1. **Установщик**: `RPGSoundscape-Setup-1.0.0.exe` из [GitHub Releases](https://github.com/Alvetore/RPGSoundscape/releases). Устанавливается в профиль пользователя, создаёт ярлыки.
-2. **Портативная версия**: `RPGSoundscape-Portable-1.0.0.exe` — один файл, не требует установки. Backend, Python, Node.js и ffmpeg уже встроены; нужна только Windows 10/11 x64.
-3. **Из исходников**: `start.bat` или `npm start` (требуется Python 3.11+, Node.js 22+ и ffmpeg).
+1. **Установщик**: `RPGSoundscape-Setup-1.1.0.exe` из [GitHub Releases](https://github.com/Alvetore/RPGSoundscape/releases). Устанавливается в профиль пользователя, создаёт ярлыки.
+2. **Портативная версия**: `RPGSoundscape-Portable-1.1.0.exe` — один файл, не требует установки. Backend, Python, Node.js и ffmpeg уже встроены; нужна только Windows 10/11 x64.
+3. **Android**: `RPGSoundscape-Android-1.1.0.apk` — пульт ПК и автономная библиотека (Android 7.0+).
+4. **Из исходников**: `start.bat` или `npm start` (требуется Python 3.11+, Node.js 22+ и ffmpeg).
 
 Данные (библиотека, пресеты, cookies) хранятся в `%APPDATA%\RPGSoundscape\storage` и не теряются при обновлении или перезапуске. Portable-версия также использует этот каталог.
 
@@ -125,17 +151,20 @@ py -3.14 -m pytest backend/tests -q
 ```
 Нужен **Python 3.11+** (рекомендуется 3.14). CI-пайплайн `.github/workflows/ci.yml` дополнительно собирает frontend на каждый push/PR.
 
-### Сборка установщика и portable:
+### Сборка установщика, portable и APK:
 
 ```bash
 py -3.14 -m pip install -r backend/requirements-build.txt
 npm run dist
+npm run build:android
 ```
 
-Скрипт собирает self-contained backend через PyInstaller, копирует Node.js/ffmpeg и создаёт:
+`npm run dist` собирает self-contained backend через PyInstaller, копирует Node.js/ffmpeg и создаёт:
 
-- `release\RPGSoundscape-Setup-1.0.0.exe` — установщик;
-- `release\RPGSoundscape-Portable-1.0.0.exe` — портативная версия.
+- `release\RPGSoundscape-Setup-1.1.0.exe` — установщик;
+- `release\RPGSoundscape-Portable-1.1.0.exe` — портативная версия.
+
+`npm run build:android` собирает frontend, упаковывает его в Android-приложение и создаёт `release\RPGSoundscape-Android-1.1.0.apk`.
 
 ---
 
@@ -199,7 +228,14 @@ c:\11\RPGMusic\
 │       └── presets.json       # legacy-пресеты (мигрируются при первом запуске)
 │
 ├── backend-dist\              # self-contained rpg_backend.exe + rpg_yt_worker.exe
-├── scripts\                   # prepare_runtime.py + build_backend.py
+├── scripts\                   # prepare_runtime.py, build_backend.py, build_android.py
+├── android\                   # нативное Android-приложение (WebView + локальный сервер)
+│   ├── app\src\main\java\com\rpg\soundscape\
+│   │   ├── MainActivity.java        # WebView, QR-сканер, режимы пульта/оффлайн
+│   │   ├── LocalLibraryServer.java  # loopback API + раздача встроенного frontend
+│   │   ├── LibraryStore.java        # библиотека, пресеты и импорт ZIP на телефоне
+│   │   └── TransferClient.java      # загрузка библиотеки с ПК по QR
+│   └── app\src\test\                # Robolectric-тесты локального API
 ├── %APPDATA%\RPGSoundscape\storage\
 │   ├── audio_library\         # все загруженные и скачанные треки пользователя
 │   └── data\
@@ -225,7 +261,6 @@ c:\11\RPGMusic\
 │   │   │   └── MobileConnectModal.tsx # QR-код и пульт для Android
 │   │   ├── App.tsx
 │   │   └── main.tsx
-│   ├── capacitor.config.json  # Конфигурация для Android сборки
 │   └── public\manifest.json   # Манифест PWA
 ├── run.py                     # Кроссплатформенный лаунчер с авто-открытием браузера
 ├── start.bat                  # Двойной клик для запуска на Windows

@@ -1,6 +1,6 @@
 {
   "name": "rpg-soundscape-studio",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "RPG Soundscape Studio — десктопное приложение для ведущих и игроков настольных ролевых игр",
   "main": "electron/main.cjs",
   "scripts": {
@@ -8,6 +8,7 @@
     "prepare:runtime": "py -3.14 scripts\\prepare_runtime.py",
     "build:backend": "py -3.14 scripts\\build_backend.py",
     "build:frontend": "cd frontend && npm run build",
+    "build:android": "py -3.14 scripts\\build_android.py",
     "dist": "npm run prepare:runtime && npm run build:backend && npm run build:frontend && electron-builder --win",
     "pack": "npm run prepare:runtime && npm run build:backend && npm run build:frontend && electron-builder --dir"
   },

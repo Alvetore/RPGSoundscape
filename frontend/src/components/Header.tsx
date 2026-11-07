@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { YoutubeIcon } from './Icons';
 import { getSoundEngine } from '../audio/SoundEngine';
+import { isAndroidLocalMode } from '../audio/androidBridge';
 
 interface HeaderProps {
   masterVolume: number;
@@ -22,6 +23,8 @@ interface HeaderProps {
   onToggleMasterMute: () => void;
   activeCount: number;
   totalChannels: number;
+  libraryCount: number;
+  presetCount: number;
   onOpenYoutubeModal: () => void;
   onOpenMobileModal: () => void;
   activeTab: 'mixer' | 'soundboard' | 'library' | 'presets';
@@ -35,12 +38,15 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMasterMute,
   activeCount,
   totalChannels,
+  libraryCount,
+  presetCount,
   onOpenYoutubeModal,
   onOpenMobileModal,
   activeTab,
   setActiveTab
 }) => {
   const engine = getSoundEngine();
+  const androidLocal = isAndroidLocalMode();
 
   const tabs = [
     { id: 'mixer' as const, label: 'Микшер', icon: SlidersHorizontal },
@@ -87,29 +93,43 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-1.5 lg:flex">
-              <Activity className="h-3.5 w-3.5 text-amber-400" />
-              <span className="rpg-kicker text-slate-500">Master</span>
-              <span className="font-mono text-xs font-semibold text-slate-200">
-                {isMasterMuted ? 'MUTE' : `${Math.round(masterVolume * 100)}%`}
-              </span>
+            <div className="hidden items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-1.5 lg:flex">
+              <div className="flex items-center gap-1.5" title="Активные каналы">
+                <Activity className={`h-3.5 w-3.5 ${activeCount > 0 ? 'text-emerald-400' : 'text-slate-600'}`} />
+                <span className="font-mono text-xs font-semibold text-slate-100">
+                  {activeCount}
+                  <span className="text-slate-600">/{totalChannels}</span>
+                </span>
+              </div>
+              <span className="h-4 w-px bg-white/10" />
+              <div className="flex items-center gap-1.5" title="Треков в библиотеке">
+                <FolderPlus className="h-3.5 w-3.5 text-sky-400" />
+                <span className="font-mono text-xs font-semibold text-slate-100">{libraryCount}</span>
+              </div>
+              <span className="h-4 w-px bg-white/10" />
+              <div className="flex items-center gap-1.5" title="Сохранённых сцен">
+                <Bookmark className="h-3.5 w-3.5 text-amber-400" />
+                <span className="font-mono text-xs font-semibold text-slate-100">{presetCount}</span>
+              </div>
             </div>
             <button
               onClick={onOpenMobileModal}
-              title="Подключить Android / Планшет по Wi-Fi"
+              title="Подключить Android-пульт по Wi-Fi или перенести библиотеку"
               className="rpg-btn h-9 px-3 text-sky-300 hover:border-sky-400/40 hover:text-sky-200"
             >
               <Smartphone className="h-4 w-4" />
-              <span className="hidden xl:inline">Android</span>
+              <span className="hidden lg:inline">Android Пульт</span>
             </button>
-            <button
-              onClick={onOpenYoutubeModal}
-              title="Скачать музыку с YouTube"
-              className="rpg-btn h-9 border-red-500/25 bg-red-500/10 px-3 text-red-300 hover:border-red-400/50 hover:bg-red-500/20 hover:text-red-200"
-            >
-              <YoutubeIcon className="h-4 w-4" />
-              <span className="hidden xl:inline">YouTube</span>
-            </button>
+            {!androidLocal && (
+              <button
+                onClick={onOpenYoutubeModal}
+                title="Скачать музыку с YouTube"
+                className="rpg-btn h-9 border-red-500/25 bg-red-500/10 px-3 text-red-300 hover:border-red-400/50 hover:bg-red-500/20 hover:text-red-200"
+              >
+                <YoutubeIcon className="h-4 w-4" />
+                <span className="hidden xl:inline">YouTube</span>
+              </button>
+            )}
           </div>
         </div>
 

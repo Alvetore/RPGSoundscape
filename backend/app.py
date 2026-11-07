@@ -9,8 +9,10 @@ import queue
 import secrets
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
+import zipfile
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 from datetime import datetime
@@ -18,7 +20,7 @@ from urllib.parse import quote, urlparse
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 import yt_dlp
 
@@ -625,6 +627,9 @@ class PresetSlotModel(BaseModel):
     slotIndex: int = Field(ge=0, le=15)
     trackId: Optional[str] = None
     title: Optional[str] = None
+    # Saved scenes must keep the audio filename. Without it a preset created
+    # from the UI cannot be restored after a restart or transferred to a phone.
+    filename: Optional[str] = None
     volume: float = Field(0.7, ge=0.0, le=1.0)
     loop: bool = True
     active: bool = False
@@ -659,12 +664,17 @@ def health_check():
 def get_info(request: Request):
     ip = get_local_ip()
     port = request.url.port or int(os.environ.get("PORT", 8000))
+    token = quote(API_TOKEN, safe="")
     return {
         "status": "online",
         "app": "RPG Music & Ambience Studio",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "lan_ip": ip,
-        "access_url": f"http://{ip}:{port}/?token={quote(API_TOKEN, safe='')}&role=remote",
+        "access_url": f"http://{ip}:{port}/?token={token}&role=remote",
+        # The Android app scans this URL to start a full library transfer.
+        # Audio files are sent over the local Wi-Fi connection; the QR code
+        # only carries the pairing token and endpoint.
+        "transfer_url": f"http://{ip}:{port}/api/library/export?token={token}&transfer=library",
         "requires_token": True,
     }
 
@@ -672,6 +682,71 @@ def get_info(request: Request):
 def get_library():
     data = sync_library_with_disk()
     return data["tracks"]
+
+@app.get("/api/library/export")
+def export_library():
+    """Stream the whole library (metadata, presets and audio) as a ZIP.
+
+    The Android app scans a QR code that points to this endpoint, then
+    downloads the archive over the local Wi-Fi network and imports it into
+    its offline library.
+    """
+    data = sync_library_with_disk()
+    tracks = data.get("tracks", [])
+    presets = load_json(PRESETS_FILE, [])
+    library_root = LIBRARY_DIR.resolve()
+
+    export_file = tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024, mode="w+b")
+    included = []
+    for track in tracks:
+        filename = str(track.get("filename") or "")
+        if not filename:
+            continue
+        try:
+            file_path = (library_root / filename).resolve()
+        except Exception:
+            continue
+        if file_path.is_relative_to(library_root) and file_path.is_file():
+            included.append((file_path, f"audio/{file_path.name}"))
+
+    manifest = {
+        "format": "rpg-soundscape-library",
+        "version": 1,
+        "exported_at": datetime.now().isoformat(),
+        "tracks": len(included),
+        "presets": len(presets),
+    }
+
+    with zipfile.ZipFile(export_file, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+        archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+        archive.writestr("library.json", json.dumps(tracks, ensure_ascii=False, indent=2))
+        archive.writestr("presets.json", json.dumps(presets, ensure_ascii=False, indent=2))
+        for file_path, archive_name in included:
+            # Audio is already compressed; storing it avoids a pointless
+            # CPU-heavy deflate pass over hundreds of megabytes.
+            archive.write(file_path, archive_name, compress_type=zipfile.ZIP_STORED)
+
+    size = export_file.tell()
+    export_file.seek(0)
+
+    headers = {
+        "Content-Disposition": 'attachment; filename="rpg_soundscape_library.zip"',
+        "Content-Length": str(size),
+        "Cache-Control": "no-store",
+        "X-RPG-Tracks": str(len(included)),
+    }
+
+    def iter_archive():
+        try:
+            while True:
+                chunk = export_file.read(1024 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            export_file.close()
+
+    return StreamingResponse(iter_archive(), media_type="application/zip", headers=headers)
 
 @app.get("/api/library/{track_id}")
 def get_track_info(track_id: str):

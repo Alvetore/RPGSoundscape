@@ -31,6 +31,17 @@ Thumbs.db
 [Dd]esktop.ini
 .DS_Store
 
+# Android build / local configuration
+android/.gradle/
+android/local.properties
+android/keystore.properties
+android/rpg-release.keystore
+android/app/src/main/assets/www/
+android/captures/
+*.apk
+*.aab
+
 # IDEs
 .vscode/
 .idea/
+*.iml

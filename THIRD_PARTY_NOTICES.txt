@@ -34,6 +34,20 @@ This distribution includes or bundles the following components:
 - Node.js — MIT License.
   https://nodejs.org/en/about/previous-releases
 
+- AndroidX / AppCompat — Apache License 2.0.
+  https://developer.android.com/jetpack/androidx
+
+- ZXing ("Zebra Crossing") and zxing-android-embedded — Apache License 2.0.
+  https://github.com/zxing/zxing
+  https://github.com/journeyapps/zxing-android-embedded
+
+- NanoHTTPD — BSD 3-Clause License.
+  https://github.com/NanoHttpd/nanohttpd
+
+The Android APK bundles the same React frontend and serves it from a loopback
+HTTP server on the device. Library transfers use the local Wi-Fi network only;
+the QR code contains the PC address and access token, not the audio files.
+
 - cobalt API fallback — public community instances. The application only sends the public
   video URL to the fallback instance; no cookies or local library data are sent.
 

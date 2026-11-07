@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { AudioTrack, PresetSlot } from '../types';
 import { getClientRole, getWebSocketUrl } from './clientRole';
+import { isAndroidLocalMode } from './androidBridge';
 import type { ISoundEngine, TrackInput } from './SoundEngine';
 
 interface HostBridgeOptions {
@@ -34,7 +35,9 @@ export function useRemoteHostBridge({
   }, [isMasterMuted]);
 
   useEffect(() => {
-    if (getClientRole() !== 'host') return;
+    // The standalone Android library plays audio locally and has no backend
+    // WebSocket to bridge to. Only the desktop host publishes playback state.
+    if (getClientRole() !== 'host' || isAndroidLocalMode()) return;
 
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
