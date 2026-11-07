@@ -14,7 +14,8 @@ import {
   HelpCircle,
   ChevronDown,
   ChevronUp,
-  ShieldAlert
+  ShieldAlert,
+  XCircle
 } from 'lucide-react';
 import { YoutubeIcon } from './Icons';
 
@@ -106,7 +107,13 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
         } else if (data.status === 'error') {
           clearInterval(interval);
           setDownloadError(data.error || 'Ошибка при скачивании аудио');
+          setDownloadStatus(null);
           setDownloadTaskId(null);
+        } else if (data.status === 'cancelled') {
+          clearInterval(interval);
+          setDownloadStatus(null);
+          setDownloadTaskId(null);
+          setDownloadError('Скачивание отменено пользователем');
         }
       } catch (err) {
         console.error('Polling error:', err);
@@ -189,6 +196,22 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
       if (msg.includes('cookies') || msg.includes('бот')) {
         setShowCookieSettings(true);
       }
+    }
+  };
+
+  const handleCancelDownload = async () => {
+    if (!downloadTaskId) {
+      setDownloadStatus(null);
+      setDownloadTaskId(null);
+      return;
+    }
+    setDownloadStatus('cancelling');
+    try {
+      await fetch(`/api/youtube/cancel/${downloadTaskId}`, { method: 'POST' });
+    } catch (err) {
+      console.error('Failed to cancel download:', err);
+      setDownloadStatus(null);
+      setDownloadTaskId(null);
     }
   };
 
@@ -414,6 +437,8 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
                   <span className="text-amber-400 flex items-center gap-1.5">
                     {downloadStatus === 'completed' ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    ) : downloadStatus === 'cancelling' ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
                     ) : (
                       <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
                     )}
@@ -421,18 +446,33 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
                       ? 'Скачивание аудио...'
                       : downloadStatus === 'converting'
                       ? 'Конвертация в MP3 (FFmpeg)...'
+                      : downloadStatus === 'cancelling'
+                      ? 'Остановка и отмена...'
                       : downloadStatus === 'completed'
                       ? 'Скачивание успешно завершено!'
                       : 'Подготовка...'}
                   </span>
-                  <span className="font-mono text-slate-300">
-                    {downloadPercent}%
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-slate-300">
+                      {downloadPercent}%
+                    </span>
+                    {(downloadStatus === 'downloading' || downloadStatus === 'starting') && (
+                      <button
+                        type="button"
+                        onClick={handleCancelDownload}
+                        className="px-2 py-0.5 text-xs text-rose-400 hover:text-rose-200 bg-rose-950/40 hover:bg-rose-900/60 rounded border border-rose-800/60 transition-colors flex items-center gap-1"
+                        title="Остановить скачивание"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Отмена</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                   <div
-                    className="bg-amber-500 h-full transition-all duration-300 rounded-full"
+                    className={`h-full transition-all duration-300 rounded-full ${downloadStatus === "cancelling" ? "bg-rose-500" : "bg-amber-500"}`}
                     style={{ width: `${downloadPercent}%` }}
                   />
                 </div>
@@ -440,29 +480,50 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
             )}
 
             {/* Download Button */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={!url.trim() || !!downloadTaskId}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-glow-gold"
-              >
-                {downloadTaskId ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Скачивание в процессе...</span>
-                  </>
-                ) : downloadStatus === 'completed' ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Скачать ещё один</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                    <span>Скачать в оффлайн библиотеку</span>
-                  </>
-                )}
-              </button>
+            <div className="pt-2 flex items-center gap-2">
+              {downloadTaskId ? (
+                <>
+                  <button
+                    type="button"
+                    disabled
+                    className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-400 font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed border border-slate-700"
+                  >
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                    <span>
+                      {downloadStatus === 'cancelling'
+                        ? 'Отмена скачивания...'
+                        : `Скачивание: ${downloadPercent}%`}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelDownload}
+                    disabled={downloadStatus === 'cancelling'}
+                    className="px-4 py-2.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-700/60 text-rose-200 hover:text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-sm"
+                  >
+                    <XCircle className="w-4 h-4 text-rose-400" />
+                    <span>Остановить</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!url.trim()}
+                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-glow-gold"
+                >
+                  {downloadStatus === 'completed' ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Скачать ещё один</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4" />
+                      <span>Скачать в оффлайн библиотеку</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </form>
 

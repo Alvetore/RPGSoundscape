@@ -189,7 +189,13 @@ def build_ydl_opts(for_download: bool = False, custom_browser: Optional[str] = N
     if not for_download:
         opts['skip_download'] = True
     else:
-        opts['format'] = 'bestaudio/best'
+        # Flexible audio format selector with fallbacks:
+        # 1. Best standalone audio (ba)
+        # 2. Any standalone audio (ba*)
+        # 3. Best combined video+audio (b)
+        # 4. Any combined video+audio (b*)
+        # 5. Best available or worst available (any stream with audio)
+        opts['format'] = 'ba/ba*/b/b*/best/worst'
 
     return opts
 
@@ -202,6 +208,11 @@ def translate_yt_error(err_str: str) -> str:
             "Чтобы скачивать без ограничений, загрузите файл cookies.txt во вкладке 'Настройки Cookies' "
             "(экспортируется за 1 минуту через расширение 'Get cookies.txt LOCALLY' в браузере) "
             "или выберите ваш установленный браузер."
+        )
+    elif "requested format is not available" in lower:
+        return (
+            "Запрошенный аудиоформат оказался временно недоступен на серверах YouTube. "
+            "Попробуйте запустить скачивание повторно — система автоматически переключится на комбинированный поток (MP3)."
         )
     elif "the page needs to be reloaded" in lower:
         return (
@@ -463,6 +474,10 @@ def run_yt_download(task_id: str, url: str, custom_title: Optional[str], categor
     output_template = str(LIBRARY_DIR / f"{file_id}.%(ext)s")
     
     def progress_hook(d):
+        task = download_tasks.get(task_id, {})
+        if task.get("cancelled"):
+            raise Exception("CANCELLED_BY_USER")
+
         if d['status'] == 'downloading':
             total = d.get('total_bytes') or d.get('total_bytes_estimate') or 1
             downloaded = d.get('downloaded_bytes', 0)
@@ -534,11 +549,25 @@ def run_yt_download(task_id: str, url: str, custom_title: Optional[str], categor
         }
     except Exception as e:
         err_msg = str(e)
-        logger.error(f"Download failed: {err_msg}")
-        download_tasks[task_id] = {
-            "status": "error",
-            "error": translate_yt_error(err_msg)
-        }
+        if "CANCELLED_BY_USER" in err_msg or download_tasks.get(task_id, {}).get("cancelled"):
+            logger.info(f"Task {task_id} was cancelled by user.")
+            download_tasks[task_id] = {
+                "status": "cancelled",
+                "percent": 0,
+                "error": "Скачивание отменено пользователем"
+            }
+            # Clean up partial files
+            for p in LIBRARY_DIR.glob(f"{file_id}.*"):
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        else:
+            logger.error(f"Download failed: {err_msg}")
+            download_tasks[task_id] = {
+                "status": "error",
+                "error": translate_yt_error(err_msg)
+            }
 
 @app.post("/api/youtube/download")
 async def start_youtube_download(req: YoutubeDownloadRequest, background_tasks: BackgroundTasks):
@@ -546,7 +575,8 @@ async def start_youtube_download(req: YoutubeDownloadRequest, background_tasks: 
     download_tasks[task_id] = {
         "status": "starting",
         "percent": 0,
-        "url": req.url
+        "url": req.url,
+        "cancelled": False
     }
     background_tasks.add_task(
         run_yt_download,
@@ -557,6 +587,15 @@ async def start_youtube_download(req: YoutubeDownloadRequest, background_tasks: 
         tags=req.tags,
         browser=req.browser_cookies
     )
+    return {"task_id": task_id, "status": "started"}
+
+@app.post("/api/youtube/cancel/{task_id}")
+def cancel_youtube_download(task_id: str):
+    if task_id in download_tasks:
+        download_tasks[task_id]["cancelled"] = True
+        download_tasks[task_id]["status"] = "cancelling"
+        return {"status": "cancelling", "task_id": task_id}
+    raise HTTPException(status_code=404, detail="Task not found")
     return {"task_id": task_id, "status": "started"}
 
 @app.get("/api/youtube/status/{task_id}")
