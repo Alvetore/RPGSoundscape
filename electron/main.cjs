@@ -1,6 +1,6 @@
 const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 
@@ -36,6 +36,25 @@ function appendLog(line) {
   console.log(line);
 }
 
+function testPython(candidate) {
+  try {
+    const pyDir = candidate.includes('\\') ? path.dirname(candidate) : '';
+    let env = { ...process.env };
+    if (pyDir) {
+      env.PATH = `${pyDir};${path.join(pyDir, 'Scripts')};${path.join(pyDir, 'Library', 'bin')};${env.PATH || ''}`;
+    }
+    const res = execFileSync(candidate, ['-c', 'import fastapi, yt_dlp, uvicorn; print("OK")'], {
+      timeout: 3500,
+      encoding: 'utf-8',
+      env: env,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return res && res.trim().includes('OK');
+  } catch (e) {
+    return false;
+  }
+}
+
 function findPython() {
   const userProfile = process.env.USERPROFILE || '';
   const localAppData = process.env.LOCALAPPDATA || '';
@@ -54,14 +73,24 @@ function findPython() {
     'py'
   ];
 
+  // First pass: find candidate that has all dependencies installed
+  for (const candidate of candidates) {
+    if (candidate.includes('\\') && !fs.existsSync(candidate)) continue;
+    appendLog(`Testing Python candidate: ${candidate}`);
+    if (testPython(candidate)) {
+      appendLog(`Verified Python with all dependencies: ${candidate}`);
+      return candidate;
+    }
+  }
+
+  // Second pass: fallback to any existing Python interpreter
   for (const candidate of candidates) {
     if (candidate.includes('\\')) {
       if (fs.existsSync(candidate)) {
-        appendLog(`Found Python at: ${candidate}`);
+        appendLog(`Fallback to existing Python: ${candidate}`);
         return candidate;
       }
     } else {
-      appendLog(`Checking PATH for: ${candidate}`);
       return candidate;
     }
   }
