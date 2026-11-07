@@ -49,6 +49,10 @@ def main():
         'socket_timeout': 15,
         'outtmpl': output_template,
         'format': 'ba/ba*/b/b*/best/worst',
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -60,6 +64,7 @@ def main():
     # Cookie configuration
     if args.cookies_file and os.path.exists(args.cookies_file) and os.path.getsize(args.cookies_file) > 10:
         opts['cookiefile'] = args.cookies_file
+        opts['extractor_args'] = {'youtube': {'player_client': ['web', 'mweb']}}
     elif args.browser in ("chrome", "firefox", "edge", "opera", "brave", "vivaldi"):
         opts['cookiesfrombrowser'] = (args.browser,)
 

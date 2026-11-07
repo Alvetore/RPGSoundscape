@@ -134,6 +134,83 @@ def sync_library_with_disk():
 # Initialize library on startup
 sync_library_with_disk()
 
+def inspect_cookie_file(file_path: Path) -> Dict[str, Any]:
+    """Analyzes cookies.txt to determine if authentic Google/YouTube session cookies are present."""
+    if not file_path.exists() or file_path.stat().st_size <= 10:
+        return {
+            "has_cookies_file": False,
+            "is_authenticated": False,
+            "has_login_info": False,
+            "file_size": 0,
+            "cookie_count": 0,
+            "warning": None,
+            "auth_status": "none"
+        }
+    
+    file_size = file_path.stat().st_size
+    lines_count = 0
+    has_login_info = False
+    has_sid = False
+    has_ssid = False
+    has_secure_sid = False
+    has_youtube_domain = False
+    
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                lines_count += 1
+                if len(parts) >= 6:
+                    domain = parts[0].lower()
+                    name = parts[5].strip()
+                    if "youtube.com" in domain or "google.com" in domain:
+                        has_youtube_domain = True
+                    if name == "LOGIN_INFO":
+                        has_login_info = True
+                    elif name == "SID":
+                        has_sid = True
+                    elif name == "SSID":
+                        has_ssid = True
+                    elif "__Secure-3PSID" in name or "__Secure-1PSID" in name:
+                        has_secure_sid = True
+    except Exception as e:
+        logger.warning(f"Error inspecting cookies file: {e}")
+        
+    is_authenticated = has_login_info or (has_sid and has_ssid)
+    
+    warning = None
+    auth_status = "valid" if is_authenticated else "missing_auth"
+    
+    if not has_youtube_domain:
+        warning = "Файл не содержит cookies для домена youtube.com или google.com."
+        auth_status = "missing_auth"
+    elif not is_authenticated:
+        if has_secure_sid and not has_login_info:
+            warning = (
+                "Внимание: файл содержит только базовые маркеры Google, но в нем отсутствует ключевой токен LOGIN_INFO. "
+                "YouTube не считает эту сессию авторизованной. Экспортируйте cookies со страницы youtube.com, "
+                "убедившись, что вы залогинены в аккаунт и в расширении включен экспорт HttpOnly cookies."
+            )
+        else:
+            warning = (
+                "В файле отсутствует токен авторизации (LOGIN_INFO / SID). "
+                "Сессия считается анонимной и YouTube может заблокировать скачивание. "
+                "Убедитесь, что вы авторизованы на youtube.com перед экспортом."
+            )
+            
+    return {
+        "has_cookies_file": True,
+        "is_authenticated": is_authenticated,
+        "has_login_info": has_login_info,
+        "file_size": file_size,
+        "cookie_count": lines_count,
+        "warning": warning,
+        "auth_status": auth_status
+    }
+
 # Initial presets if empty
 def init_default_presets():
     presets = load_json(PRESETS_FILE, [])
@@ -187,12 +264,17 @@ def build_ydl_opts(for_download: bool = False, custom_browser: Optional[str] = N
     opts: Dict[str, Any] = {
         'quiet': True,
         'no_warnings': True,
-        'socket_timeout': 12,
+        'socket_timeout': 15,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+        }
     }
 
     # 1. Cookie file check (cookies.txt)
     if (cookie_source in ("auto", "file")) and COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10:
         opts['cookiefile'] = str(COOKIES_FILE)
+        opts['extractor_args'] = {'youtube': {'player_client': ['web', 'mweb']}}
     elif cookie_source in ("chrome", "firefox", "edge", "opera", "brave", "vivaldi"):
         try:
             opts['cookiesfrombrowser'] = (cookie_source,)
@@ -216,12 +298,25 @@ def translate_yt_error(err_str: str) -> str:
     """Translates technical yt-dlp / YouTube errors into clear, actionable advice."""
     lower = err_str.lower()
     if "sign in to confirm you’re not a bot" in lower or "sign in to confirm" in lower:
-        return (
-            "YouTube заблокировал анонимный запрос проверкой 'Подтвердите, что вы не бот'. "
-            "Чтобы скачивать без ограничений, загрузите файл cookies.txt во вкладке 'Настройки Cookies' "
-            "(экспортируется за 1 минуту через расширение 'Get cookies.txt LOCALLY' в браузере) "
-            "или выберите ваш установленный браузер."
-        )
+        cookie_info = inspect_cookie_file(COOKIES_FILE)
+        if not cookie_info["has_cookies_file"]:
+            return (
+                "YouTube заблокировал анонимный запрос проверкой 'Подтвердите, что вы не бот'. "
+                "Чтобы скачивать без ограничений, загрузите файл cookies.txt во вкладке 'Настройки Cookies' "
+                "(экспортируется за 1 минуту через расширение 'Get cookies.txt LOCALLY' в браузере) "
+                "или добавьте готовый аудиофайл через вкладку «Библиотека» → «Загрузить файл»."
+            )
+        elif not cookie_info["is_authenticated"]:
+            return (
+                "YouTube отклонил запрос: в загруженном файле cookies.txt отсутствует токен авторизации LOGIN_INFO. "
+                "Запрос был распознан как анонимный. Пожалуйста, откройте вкладку youtube.com под вашим аккаунтом Google, "
+                "включите в расширении 'Get cookies.txt LOCALLY' экспорт HttpOnly cookies и экспортируйте свежий файл."
+            )
+        else:
+            return (
+                "YouTube заблокировал сессию проверкой бота. Срок действия авторизационных cookies мог истечь. "
+                "Рекомендуется экспортировать свежий файл cookies.txt из браузера или воспользоваться прямой загрузкой файла в Библиотеку."
+            )
     elif "requested format is not available" in lower:
         return (
             "Запрошенный аудиоформат оказался временно недоступен на серверах YouTube. "
@@ -420,14 +515,10 @@ async def upload_audio(file: UploadFile = File(...), category: str = Form("Local
 @app.get("/api/youtube/cookies")
 def get_cookie_status():
     settings = get_settings()
-    has_file = COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10
-    file_size = COOKIES_FILE.stat().st_size if COOKIES_FILE.exists() else 0
-    return {
-        "has_cookies_file": has_file,
-        "file_size": file_size,
-        "cookie_source": settings.get("cookie_source", "auto"),
-        "available_browsers": ["auto", "file", "chrome", "firefox", "edge", "opera", "brave", "none"]
-    }
+    info = inspect_cookie_file(COOKIES_FILE)
+    info["cookie_source"] = settings.get("cookie_source", "auto")
+    info["available_browsers"] = ["auto", "file", "chrome", "firefox", "edge", "opera", "brave", "none"]
+    return info
 
 @app.post("/api/youtube/cookies")
 async def upload_cookies_file(file: UploadFile = File(...)):
@@ -440,7 +531,8 @@ async def upload_cookies_file(file: UploadFile = File(...)):
     settings = get_settings()
     settings["cookie_source"] = "auto"
     save_settings(settings)
-    return {"status": "saved", "size": len(content)}
+    info = inspect_cookie_file(COOKIES_FILE)
+    return {"status": "saved", "size": len(content), **info}
 
 @app.delete("/api/youtube/cookies")
 def delete_cookies_file():

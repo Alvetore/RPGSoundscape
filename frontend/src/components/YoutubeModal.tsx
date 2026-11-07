@@ -38,6 +38,11 @@ interface CookieStatus {
   file_size: number;
   cookie_source: string;
   available_browsers: string[];
+  is_authenticated?: boolean;
+  has_login_info?: boolean;
+  auth_status?: 'valid' | 'missing_auth' | 'none';
+  cookie_count?: number;
+  warning?: string | null;
 }
 
 export const YoutubeModal: React.FC<YoutubeModalProps> = ({
@@ -229,9 +234,16 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
         body: formData
       });
       if (!res.ok) throw new Error('Ошибка сохранения cookies');
+      const data = await res.json();
       await fetchCookieStatus();
       setDownloadError(null);
-      alert('Файл cookies.txt успешно загружен и активирован!');
+      if (data.is_authenticated) {
+        alert('Успешно: файл cookies.txt содержит активную авторизацию YouTube (LOGIN_INFO)! Ограничения бота сняты.');
+      } else {
+        alert(data.warning || 'Файл загружен, но в нем отсутствует сессионный токен LOGIN_INFO. YouTube может продолжать требовать подтверждения бота.');
+        setShowCookieSettings(true);
+        setShowCookieGuide(true);
+      }
     } catch (err) {
       alert('Ошибка при загрузке cookies.txt');
     } finally {
@@ -541,9 +553,17 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 {cookieStatus?.has_cookies_file ? (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-semibold">
-                    Файл подключен
-                  </span>
+                  cookieStatus.is_authenticated ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      <span>Аккаунт авторизован</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      <span>Нет токена входа</span>
+                    </span>
+                  )
                 ) : (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
                     Не настроено
@@ -561,13 +581,25 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-base">🍪</span>
                     <div className="min-w-0">
-                      <p className="font-semibold text-slate-200 text-xs truncate">
-                        {cookieStatus?.has_cookies_file ? 'Файл cookies.txt активен' : 'Файл cookies.txt отсутствует'}
+                      <p className="font-semibold text-slate-200 text-xs truncate flex items-center gap-1.5">
+                        {cookieStatus?.has_cookies_file ? (
+                          cookieStatus.is_authenticated ? (
+                            <>
+                              <span className="text-emerald-400">Файл активен (авторизован)</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-amber-400">Файл активен (анонимная сессия)</span>
+                            </>
+                          )
+                        ) : (
+                          'Файл cookies.txt отсутствует'
+                        )}
                       </p>
                       <p className="text-[10px] text-slate-400">
                         {cookieStatus?.has_cookies_file 
-                          ? `Размер: ${Math.round(cookieStatus.file_size / 1024)} KB • yt-dlp авторизован` 
-                          : 'Используется для подтверждения аккаунта при защите от ботов'}
+                          ? `Размер: ${Math.round(cookieStatus.file_size / 1024)} KB (${cookieStatus.cookie_count || 0} cookies)` 
+                          : 'Необходим для обхода проверки "Подтвердите, что вы не бот"'}
                       </p>
                     </div>
                   </div>
@@ -603,6 +635,26 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
                   </div>
                 </div>
 
+                {/* Warning about missing auth token if present */}
+                {cookieStatus?.has_cookies_file && !cookieStatus.is_authenticated && (
+                  <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-600/40 text-amber-300 text-[11px] space-y-1">
+                    <p className="font-semibold flex items-center gap-1 text-amber-400">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      В файле отсутствует авторизационный токен YouTube (LOGIN_INFO)
+                    </p>
+                    <p className="text-slate-300 text-[10.5px] leading-relaxed">
+                      YouTube распознает данный файл как анонимный и заблокирует скачивание. Пожалуйста, убедитесь, что вы вошли в свой профиль Google на <b className="text-white">youtube.com</b> и при экспорте расширением включена галочка <b className="text-white">Export HttpOnly cookies</b>.
+                    </p>
+                  </div>
+                )}
+
+                {cookieStatus?.has_cookies_file && cookieStatus.is_authenticated && (
+                  <div className="p-2 rounded-lg bg-emerald-950/40 border border-emerald-600/40 text-emerald-300 text-[11px] flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Токен аккаунта LOGIN_INFO найден. YouTube готов к отдаче аудиопотоков.</span>
+                  </div>
+                )}
+
                 {/* Browser Selection */}
                 <div>
                   <label className="block text-[11px] text-slate-400 mb-1">
@@ -613,9 +665,9 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
                     onChange={(e) => handleBrowserChange(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
                   >
-                    <option value="auto">Авто (cookies.txt если есть, иначе прямо из браузера)</option>
+                    <option value="auto">Авто (cookies.txt если есть, иначе напрямую из браузера)</option>
                     <option value="file">Только загруженный cookies.txt</option>
-                    <option value="chrome">Google Chrome</option>
+                    <option value="chrome">Google Chrome (требует закрытого Chrome)</option>
                     <option value="firefox">Mozilla Firefox</option>
                     <option value="edge">Microsoft Edge</option>
                     <option value="opera">Opera</option>
@@ -631,20 +683,21 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
                     className="text-[11px] text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium"
                   >
                     <HelpCircle className="w-3.5 h-3.5" />
-                    <span>Инструкция: как получить cookies.txt за 30 секунд</span>
+                    <span>Инструкция: как получить рабочий cookies.txt за 1 минуту</span>
                   </button>
 
                   {showCookieGuide && (
-                    <div className="mt-2 p-2.5 rounded-lg bg-black/40 border border-slate-800 text-[11px] text-slate-300 space-y-1.5">
-                      <p className="font-semibold text-amber-400">Простые шаги:</p>
-                      <ol className="list-decimal list-inside space-y-1 text-slate-400">
-                        <li>Установите в Chrome/Firefox бесплатное расширение: <b className="text-slate-200">Get cookies.txt LOCALLY</b>.</li>
-                        <li>Откройте сайт <b>youtube.com</b> в вашем браузере (где вы вошли в аккаунт).</li>
-                        <li>Нажмите на иконку расширения и нажмите кнопку <b className="text-slate-200">«Export»</b> — сохранится файл <code className="text-amber-300">youtube.com_cookies.txt</code>.</li>
-                        <li>Нажмите кнопку <b>«Загрузить .txt»</b> выше и выберите этот файл.</li>
+                    <div className="mt-2 p-3 rounded-lg bg-black/40 border border-slate-800 text-[11px] text-slate-300 space-y-2">
+                      <p className="font-semibold text-amber-400">Пошаговый экспорт с авторизацией:</p>
+                      <ol className="list-decimal list-inside space-y-1.5 text-slate-400">
+                        <li>Установите в Chrome/Firefox бесплатное расширение <b className="text-slate-200">Get cookies.txt LOCALLY</b>.</li>
+                        <li>Откройте вкладку <b className="text-slate-200">youtube.com</b> и убедитесь, что вы вошли в систему (в правом верхнем углу видна аватарка аккаунта).</li>
+                        <li>Перейдите по ссылке <code className="text-amber-300 bg-slate-800 px-1 py-0.5 rounded">youtube.com/robots.txt</code> (это зафиксирует токен от сброса браузером).</li>
+                        <li>Нажмите на иконку расширения, проверьте, что отмечен экспорт <b className="text-slate-200">HttpOnly</b>, и нажмите <b className="text-slate-200">«Export»</b>.</li>
+                        <li>Нажмите кнопку <b className="text-slate-200">«Загрузить .txt»</b> выше. Как только статус загорится зеленым — можно скачивать любые треки!</li>
                       </ol>
-                      <p className="text-[10px] text-slate-500 italic mt-1">
-                        Файл хранится только локально на вашем компьютере и передается напрямую в yt-dlp для подтверждения сессии.
+                      <p className="text-[10px] text-slate-500 italic">
+                        Файл хранится только локально на вашем ПК и используется исключительно для получения аудиопотока.
                       </p>
                     </div>
                   )}
@@ -652,6 +705,17 @@ export const YoutubeModal: React.FC<YoutubeModalProps> = ({
 
               </div>
             )}
+          </div>
+
+          {/* Offline / Direct File Fallback Box */}
+          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-start gap-2.5 text-[11px] text-slate-400">
+            <span className="text-base leading-none">💡</span>
+            <div className="flex-1">
+              <p className="text-slate-300 font-semibold">Альтернатива без скачивания с YouTube:</p>
+              <p className="mt-0.5 text-slate-400 text-[10.5px] leading-relaxed">
+                Вы можете скачать аудиофайл любимого эмбиента или музыки любым привычным способом (через сторонний загрузчик, Telegram-бота или браузер) и загрузить напрямую в библиотеку через вкладку <b className="text-slate-300">«Библиотека» → «Загрузить файл»</b> (.mp3, .wav, .ogg, .flac).
+              </p>
+            </div>
           </div>
 
         </div>
