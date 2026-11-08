@@ -2,6 +2,7 @@ export type ClientRole = 'host' | 'remote';
 
 const ROLE_KEY = 'rpg_client_role';
 const TOKEN_KEY = 'rpg_api_token';
+const LOCAL_TOKEN_COOKIE = 'rpg_local_token';
 
 function isLoopbackHost(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
@@ -17,6 +18,16 @@ export function initClientContext(): void {
   const token = url.searchParams.get('token');
   const role = url.searchParams.get('role');
 
+  // The Android shell serves the app from a loopback HTTP server. The random
+  // per-launch token arrives in the URL fragment (never sent to the server),
+  // then becomes a same-origin cookie so audio requests are authenticated too.
+  const hashParams = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : '');
+  const localToken = hashParams.get('rpg_token');
+  if (localToken) {
+    document.cookie = `${LOCAL_TOKEN_COOKIE}=${encodeURIComponent(localToken)}; path=/; SameSite=Lax`;
+    url.hash = '';
+  }
+
   if (token) {
     sessionStorage.setItem(TOKEN_KEY, token);
     url.searchParams.delete('token');
@@ -24,7 +35,7 @@ export function initClientContext(): void {
   if (role === 'host' || role === 'remote') {
     sessionStorage.setItem(ROLE_KEY, role);
   }
-  if (token || role) {
+  if (token || role || localToken) {
     const cleanUrl = `${url.pathname}${url.search}${url.hash}`;
     window.history.replaceState({}, '', cleanUrl);
   }

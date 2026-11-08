@@ -29,6 +29,7 @@ import com.google.zxing.integration.android.IntentIntegrator;
 import com.google.zxing.integration.android.IntentResult;
 
 import java.net.URI;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
     private static final int FILE_CHOOSER_REQUEST = 2001;
@@ -79,40 +80,7 @@ public class MainActivity extends AppCompatActivity {
         webView.setBackgroundColor(Color.parseColor("#0c0e14"));
         configureWebView();
         setContentView(webView);
-        if (!handleDeepLink(getIntent())) {
-            loadLocalLibrary();
-        }
-    }
-
-    @Override
-    protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
-        setIntent(intent);
-        handleDeepLink(intent);
-    }
-
-    private boolean handleDeepLink(Intent intent) {
-        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) {
-            return false;
-        }
-        Uri data = intent.getData();
-        if (data == null || !"rpg".equalsIgnoreCase(data.getScheme())) {
-            return false;
-        }
-        String target = data.getQueryParameter("url");
-        if (target == null || target.trim().isEmpty()) {
-            Toast.makeText(this, "Ссылка не содержит адрес", Toast.LENGTH_LONG).show();
-            return false;
-        }
-        boolean transfer = "transfer".equalsIgnoreCase(data.getHost())
-                || target.contains("transfer=library")
-                || target.contains("/api/library/export");
-        if (transfer) {
-            startTransfer(target);
-        } else {
-            loadRemote(target);
-        }
-        return true;
+        loadLocalLibrary();
     }
 
     private void startLocalServer() {
@@ -265,10 +233,15 @@ public class MainActivity extends AppCompatActivity {
         if (server == null) {
             return;
         }
-        webView.loadUrl("http://127.0.0.1:" + server.getListeningPort() + "/");
+        webView.loadUrl("http://127.0.0.1:" + server.getListeningPort()
+                + "/#rpg_token=" + server.getLocalToken());
     }
 
     private void loadRemote(String rawUrl) {
+        loadRemote(rawUrl, false);
+    }
+
+    private void loadRemote(String rawUrl, boolean allowExternal) {
         String url = rawUrl == null ? "" : rawUrl.trim();
         if (url.isEmpty()) {
             return;
@@ -280,6 +253,18 @@ public class MainActivity extends AppCompatActivity {
             URI parsed = new URI(url);
             if (parsed.getHost() == null) {
                 throw new IllegalArgumentException("Нет адреса компьютера");
+            }
+            if (!allowExternal && !isLocalOrPrivateHost(parsed.getHost())) {
+                final String externalUrl = url;
+                new AlertDialog.Builder(this)
+                        .setTitle("Внешний адрес")
+                        .setMessage("Адрес «" + parsed.getHost() + "» не похож на локальную "
+                                + "сеть.\n\nПодключаться к внешнему серверу?")
+                        .setPositiveButton("Продолжить",
+                                (dialog, which) -> loadRemote(externalUrl, true))
+                        .setNegativeButton("Отмена", null)
+                        .show();
+                return;
             }
             if (!url.contains("token=")) {
                 Toast.makeText(this, "В ссылке нет токена доступа", Toast.LENGTH_LONG).show();
@@ -294,6 +279,40 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             Toast.makeText(this, "Некорректная ссылка: " + e.getMessage(),
                     Toast.LENGTH_LONG).show();
+        }
+    }
+
+    static boolean isLocalOrPrivateHost(String host) {
+        if (host == null) {
+            return false;
+        }
+        String value = host.toLowerCase(Locale.US);
+        if (value.equals("localhost") || value.endsWith(".local")) {
+            return true;
+        }
+        if (value.startsWith("[") && value.endsWith("]")) {
+            value = value.substring(1, value.length() - 1);
+        }
+        if (value.contains(":")) {
+            return value.equals("::1")
+                    || value.startsWith("fe80:")
+                    || value.startsWith("fc")
+                    || value.startsWith("fd");
+        }
+        String[] parts = value.split("\\.");
+        if (parts.length != 4) {
+            return false;
+        }
+        try {
+            int a = Integer.parseInt(parts[0]);
+            int b = Integer.parseInt(parts[1]);
+            return a == 10
+                    || a == 127
+                    || (a == 192 && b == 168)
+                    || (a == 172 && b >= 16 && b <= 31)
+                    || (a == 169 && b == 254);
+        } catch (NumberFormatException e) {
+            return false;
         }
     }
 
@@ -493,7 +512,7 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface
         public String getVersion() {
-            return "1.1.0";
+            return "1.1.1";
         }
 
         @JavascriptInterface

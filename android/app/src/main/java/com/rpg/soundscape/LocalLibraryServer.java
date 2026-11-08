@@ -15,9 +15,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 import fi.iki.elonen.NanoHTTPD;
 
@@ -31,11 +33,20 @@ public class LocalLibraryServer extends NanoHTTPD {
 
     private final Context context;
     private final LibraryStore store;
+    private final String localToken;
 
     public LocalLibraryServer(Context context, int port) {
         super("127.0.0.1", port);
         this.context = context.getApplicationContext();
         this.store = new LibraryStore(this.context);
+        // The shell puts this token in the URL fragment. Other apps sharing
+        // the device cannot read the WebView fragment or its cookies.
+        this.localToken = UUID.randomUUID().toString().replace("-", "")
+                + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    public String getLocalToken() {
+        return localToken;
     }
 
     @Override
@@ -52,6 +63,9 @@ public class LocalLibraryServer extends NanoHTTPD {
 
         Method method = session.getMethod();
         try {
+            if (uri.startsWith("/api/") && !isAuthorized(session)) {
+                return error(Response.Status.UNAUTHORIZED, "Требуется доступ");
+            }
             if ("/health".equals(uri)) {
                 return json(Response.Status.OK, "{\"status\":\"ok\",\"app\":\"RPG Soundscape local\"}");
             }
@@ -284,6 +298,43 @@ public class LocalLibraryServer extends NanoHTTPD {
         session.parseBody(files);
         String body = files.get("postData");
         return body == null ? "{}" : body;
+    }
+
+    private boolean isAuthorized(IHTTPSession session) {
+        String supplied = session.getHeaders().get("x-rpg-token");
+        if (supplied == null || supplied.isEmpty()) {
+            Map<String, String> params = session.getParms();
+            if (params != null) {
+                supplied = params.get("token");
+            }
+        }
+        if (supplied == null || supplied.isEmpty()) {
+            supplied = cookieValue(session.getHeaders().get("cookie"), "rpg_local_token");
+        }
+        if (supplied == null || supplied.isEmpty()) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                supplied.getBytes(StandardCharsets.UTF_8),
+                localToken.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String cookieValue(String header, String name) {
+        if (header == null) {
+            return null;
+        }
+        for (String part : header.split(";")) {
+            int equals = part.indexOf('=');
+            if (equals < 0 || !part.substring(0, equals).trim().equals(name)) {
+                continue;
+            }
+            try {
+                return URLDecoder.decode(part.substring(equals + 1).trim(), "UTF-8");
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private Response json(Response.Status status, String body) {

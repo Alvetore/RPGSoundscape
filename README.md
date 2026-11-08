@@ -97,7 +97,7 @@
 
 ### Android APK: пульт ПК и автономная библиотека
 
-APK доступен в [GitHub Releases](https://github.com/Alvetore/RPGSoundscape/releases) (`RPGSoundscape-Android-1.1.0.apk`). Установите его на телефон или планшет (Android 7.0+), подключённый к той же Wi-Fi сети, что и компьютер.
+APK доступен в [GitHub Releases](https://github.com/Alvetore/RPGSoundscape/releases) (`RPGSoundscape-Android-1.1.1.apk`). Установите его на телефон или планшет (Android 7.0+), подключённый к той же Wi-Fi сети, что и компьютер.
 
 **Режим 1. Пульт ПК**
 1. Запустите приложение на компьютере.
@@ -119,7 +119,7 @@ APK доступен в [GitHub Releases](https://github.com/Alvetore/RPGSoundsc
 ```bash
 npm run build:android
 ```
-Скрипт собирает frontend, копирует его в `android/app/src/main/assets/www`, запускает Gradle и кладёт подписанный APK в `release\RPGSoundscape-Android-1.1.0.apk`. Для сборки нужны Android SDK 35 и JDK 17+ (Android Studio JBR подходит). Ключ подписи хранится локально в `android/rpg-release.keystore` и не коммитится — сохраните его, чтобы выпускать обновления поверх установленной версии.
+Скрипт собирает frontend, копирует его в `android/app/src/main/assets/www`, запускает Gradle и кладёт подписанный APK в `release\RPGSoundscape-Android-1.1.1.apk`. Для сборки нужны Android SDK 35 и JDK 17+ (Android Studio JBR подходит). Ключ подписи хранится локально в `android/rpg-release.keystore` и не коммитится — сохраните его, чтобы выпускать обновления поверх установленной версии.
 
 Отпечаток сертификата подписи APK (SHA-256): `9AEA222F82DC97776C19E8211658F56A27A80C06E7BA406CB134CC9834A6096F`.
 
@@ -131,9 +131,9 @@ npm run build:android
 
 Вы можете запустить приложение любым удобным способом без ввода команд в терминал:
 
-1. **Установщик**: `RPGSoundscape-Setup-1.1.0.exe` из [GitHub Releases](https://github.com/Alvetore/RPGSoundscape/releases). Устанавливается в профиль пользователя, создаёт ярлыки.
-2. **Портативная версия**: `RPGSoundscape-Portable-1.1.0.exe` — один файл, не требует установки. Backend, Python, Node.js и ffmpeg уже встроены; нужна только Windows 10/11 x64.
-3. **Android**: `RPGSoundscape-Android-1.1.0.apk` — пульт ПК и автономная библиотека (Android 7.0+).
+1. **Установщик**: `RPGSoundscape-Setup-1.1.1.exe` из [GitHub Releases](https://github.com/Alvetore/RPGSoundscape/releases). Устанавливается в профиль пользователя, создаёт ярлыки.
+2. **Портативная версия**: `RPGSoundscape-Portable-1.1.1.exe` — один файл, не требует установки. Backend, Python, Node.js и ffmpeg уже встроены; нужна только Windows 10/11 x64.
+3. **Android**: `RPGSoundscape-Android-1.1.1.apk` — пульт ПК и автономная библиотека (Android 7.0+).
 4. **Из исходников**: `start.bat` или `npm start` (требуется Python 3.11+, Node.js 22+ и ffmpeg).
 
 Данные (библиотека, пресеты, cookies) хранятся в `%APPDATA%\RPGSoundscape\storage` и не теряются при обновлении или перезапуске. Portable-версия также использует этот каталог.
@@ -163,10 +163,10 @@ npm run build:android
 
 `npm run dist` собирает self-contained backend через PyInstaller, копирует Node.js/ffmpeg и создаёт:
 
-- `release\RPGSoundscape-Setup-1.1.0.exe` — установщик;
-- `release\RPGSoundscape-Portable-1.1.0.exe` — портативная версия.
+- `release\RPGSoundscape-Setup-1.1.1.exe` — установщик;
+- `release\RPGSoundscape-Portable-1.1.1.exe` — портативная версия.
 
-`npm run build:android` собирает frontend, упаковывает его в Android-приложение и создаёт `release\RPGSoundscape-Android-1.1.0.apk`.
+`npm run build:android` собирает frontend, упаковывает его в Android-приложение и создаёт `release\RPGSoundscape-Android-1.1.1.apk`.
 
 ---
 

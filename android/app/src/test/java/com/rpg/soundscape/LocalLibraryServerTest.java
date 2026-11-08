@@ -1,6 +1,7 @@
 package com.rpg.soundscape;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -37,6 +38,7 @@ import fi.iki.elonen.NanoHTTPD;
 public class LocalLibraryServerTest {
     private LocalLibraryServer server;
     private String baseUrl;
+    private String localToken;
 
     @Before
     public void setUp() throws IOException {
@@ -44,6 +46,7 @@ public class LocalLibraryServerTest {
         server = new LocalLibraryServer(context, 0);
         server.start(1000, false);
         baseUrl = "http://127.0.0.1:" + server.getListeningPort();
+        localToken = server.getLocalToken();
     }
 
     @After
@@ -55,12 +58,35 @@ public class LocalLibraryServerTest {
 
     @Test
     public void servesInfoAndBundledFrontend() throws Exception {
-        String info = read(new URL(baseUrl + "/api/info"));
+        String info = read(new URL(baseUrl + "/api/info"), localToken);
         assertTrue(info.contains("\"mode\":\"local\""));
         assertTrue(info.contains("\"status\":\"online\""));
 
-        String index = read(new URL(baseUrl + "/"));
+        String index = read(new URL(baseUrl + "/"), localToken);
         assertTrue(index.contains("id=\"root\""));
+    }
+
+    @Test
+    public void apiRequiresLocalToken() throws Exception {
+        HttpURLConnection unauthorized =
+                (HttpURLConnection) new URL(baseUrl + "/api/info").openConnection();
+        assertEquals(401, unauthorized.getResponseCode());
+
+        String info = read(new URL(baseUrl + "/api/info"), localToken);
+        assertTrue(info.contains("\"mode\":\"local\""));
+    }
+
+    @Test
+    public void acceptsOnlyLocalOrPrivateHostsWithoutConfirmation() {
+        assertTrue(MainActivity.isLocalOrPrivateHost("192.168.0.2"));
+        assertTrue(MainActivity.isLocalOrPrivateHost("10.0.2.2"));
+        assertTrue(MainActivity.isLocalOrPrivateHost("172.16.0.1"));
+        assertTrue(MainActivity.isLocalOrPrivateHost("172.31.255.254"));
+        assertTrue(MainActivity.isLocalOrPrivateHost("127.0.0.1"));
+        assertTrue(MainActivity.isLocalOrPrivateHost("localhost"));
+        assertFalse(MainActivity.isLocalOrPrivateHost("8.8.8.8"));
+        assertFalse(MainActivity.isLocalOrPrivateHost("172.32.0.1"));
+        assertFalse(MainActivity.isLocalOrPrivateHost("example.com"));
     }
 
     @Test
@@ -70,6 +96,7 @@ public class LocalLibraryServerTest {
         HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + "/api/upload").openConnection();
         connection.setRequestMethod("POST");
         connection.setDoOutput(true);
+        connection.setRequestProperty("X-RPG-Token", localToken);
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
         connection.setFixedLengthStreamingMode(upload.length);
         try (OutputStream output = connection.getOutputStream()) {
@@ -81,12 +108,13 @@ public class LocalLibraryServerTest {
         String filename = track.getString("filename");
         assertNotNull(track.getString("id"));
 
-        String library = read(new URL(baseUrl + "/api/library"));
+        String library = read(new URL(baseUrl + "/api/library"), localToken);
         assertTrue(library.contains(filename));
         assertTrue(library.contains("Test track"));
 
         HttpURLConnection audio = (HttpURLConnection) new URL(
                 baseUrl + "/api/audio/" + filename).openConnection();
+        audio.setRequestProperty("X-RPG-Token", localToken);
         audio.setRequestProperty("Range", "bytes=0-9");
         assertEquals(206, audio.getResponseCode());
         assertEquals("bytes 0-9/4096", audio.getHeaderField("Content-Range"));
@@ -99,6 +127,7 @@ public class LocalLibraryServerTest {
         HttpURLConnection delete = (HttpURLConnection) new URL(
                 baseUrl + "/api/library/" + track.getString("id")).openConnection();
         delete.setRequestMethod("DELETE");
+        delete.setRequestProperty("X-RPG-Token", localToken);
         assertEquals(200, delete.getResponseCode());
     }
 
@@ -223,8 +252,9 @@ public class LocalLibraryServerTest {
         out.write(value.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static String read(URL url) throws IOException {
+    private static String read(URL url, String token) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestProperty("X-RPG-Token", token);
         try (InputStream input = connection.getInputStream()) {
             return new String(readAll(input), StandardCharsets.UTF_8);
         }
