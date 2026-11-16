@@ -177,11 +177,18 @@ async function waitForBackend(port, maxWaitMs = 25000) {
 }
 
 function isPortFree(port) {
+  // A bind probe is unreliable on Windows: libuv sets SO_REUSEADDR, which
+  // there permits listening on a port another process already holds. Follow
+  // run.py and test whether anyone accepts a loopback connection instead.
   return new Promise((resolve) => {
-    const server = net.createServer();
-    server.once('error', () => resolve(false));
-    server.once('listening', () => server.close(() => resolve(true)));
-    server.listen(port, '127.0.0.1');
+    const socket = net.connect({ port, host: '127.0.0.1' });
+    const finish = (result) => {
+      socket.destroy();
+      resolve(result);
+    };
+    socket.once('connect', () => finish(false)); // someone answered: busy
+    socket.once('error', () => finish(true)); // connection refused: free
+    socket.setTimeout(1500, () => finish(true)); // filtered: assume free
   });
 }
 
