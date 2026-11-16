@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn, execFileSync } = require('child_process');
 const http = require('http');
+const net = require('net');
 const fs = require('fs');
 
 // Keep app.getPath('userData') predictable and aligned with run.py
@@ -35,7 +36,9 @@ function getRootDir() {
 }
 
 const ROOT_DIR = getRootDir();
-const PORT = 8000;
+const PREFERRED_PORT = 8000;
+// The backend actually binds this port; it changes when 8000 is taken.
+let backendPort = PREFERRED_PORT;
 
 function getBundledBackend() {
   const candidates = [
@@ -173,6 +176,24 @@ async function waitForBackend(port, maxWaitMs = 25000) {
   return false;
 }
 
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => server.close(() => resolve(true)));
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+// Mirrors run.py find_available_port: when another program holds 8000 the
+// backend cannot bind it, so the window and QR link must use the next port.
+async function findAvailablePort(preferredPort = PREFERRED_PORT, attempts = 10) {
+  for (let port = preferredPort; port < preferredPort + attempts; port++) {
+    if (await isPortFree(port)) return port;
+  }
+  return preferredPort;
+}
+
 function wireBackendProcess(proc) {
   proc.stdout.on('data', (data) => {
     appendLog(`[Python]: ${data.toString().trim()}`);
@@ -197,16 +218,23 @@ function startBackend() {
     appendLog('Starting backend initialization...');
     
     // Check if already running (e.g. from a previous instance or terminal)
-    const alreadyUp = await checkServerReady(PORT);
+    const alreadyUp = await checkServerReady(PREFERRED_PORT);
     if (alreadyUp) {
       const existingToken = readBackendToken();
       if (existingToken) {
         backendToken = existingToken;
-        appendLog(`Backend is already alive on port ${PORT}; reused its API token`);
+        appendLog(`Backend is already alive on port ${PREFERRED_PORT}; reused its API token`);
       } else {
-        appendLog(`Backend is already alive on port ${PORT}, but its API token was not found`);
+        appendLog(`Backend is already alive on port ${PREFERRED_PORT}, but its API token was not found`);
       }
       return resolve(true);
+    }
+
+    // Another program may hold port 8000 without speaking our /health.
+    // Fall back to the next free port so the app can still start.
+    backendPort = await findAvailablePort(PREFERRED_PORT);
+    if (backendPort !== PREFERRED_PORT) {
+      appendLog(`Port ${PREFERRED_PORT} is busy; starting the backend on port ${backendPort}`);
     }
 
     // Reuse the persisted token so an already paired phone stays authorized
@@ -236,7 +264,7 @@ function startBackend() {
 
     const baseEnv = {
       ...process.env,
-      PORT: String(PORT),
+      PORT: String(backendPort),
       PATH: envPath,
       RPG_DATA_DIR: getDataDir(),
       RPG_API_TOKEN: backendToken,
@@ -266,14 +294,14 @@ function startBackend() {
       }
 
       wireBackendProcess(pythonProcess);
-      const isReady = await waitForBackend(PORT, 60000);
+      const isReady = await waitForBackend(backendPort, 60000);
       appendLog(`Bundled backend ready status after wait: ${isReady}`);
 
       if (!isReady) {
         const logDump = backendLogs.slice(-25).join('\n');
         dialog.showErrorBox(
           'Ошибка запуска бэкенда',
-          `Не удалось подключиться к встроенному серверу на порту ${PORT}.\n\n` +
+          `Не удалось подключиться к встроенному серверу на порту ${backendPort}.\n\n` +
           `Файл: ${bundledBackend}\n\n` +
           `Журнал вывода:\n${logDump || 'Нет вывода'}`
         );
@@ -324,14 +352,14 @@ function startBackend() {
     }
 
     wireBackendProcess(pythonProcess);
-    const isReady = await waitForBackend(PORT, 60000);
+    const isReady = await waitForBackend(backendPort, 60000);
     appendLog(`Backend ready status after wait: ${isReady}`);
 
     if (!isReady) {
       const logDump = backendLogs.slice(-25).join('\n');
       dialog.showErrorBox(
         'Ошибка запуска бэкенда',
-        `Не удалось подключиться к локальному аудио-серверу на порту ${PORT}.\n\n` +
+        `Не удалось подключиться к локальному аудио-серверу на порту ${backendPort}.\n\n` +
         `Python: ${pyExe}\n` +
         `Скрипт: ${appPy}\n\n` +
         `Журнал вывода:\n${logDump || 'Нет вывода'}`
@@ -373,13 +401,13 @@ function createWindow() {
   });
 
   const tokenQuery = backendToken ? `?token=${encodeURIComponent(backendToken)}` : '';
-  mainWindow.loadURL(`http://127.0.0.1:${PORT}/${tokenQuery}`);
+  mainWindow.loadURL(`http://127.0.0.1:${backendPort}/${tokenQuery}`);
 
   // The application is a single local page. Never navigate the main window
   // to external sites or open untrusted popup windows.
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(`http://127.0.0.1:${PORT}`)) {
+    if (!url.startsWith(`http://127.0.0.1:${backendPort}`)) {
       event.preventDefault();
     }
   });
