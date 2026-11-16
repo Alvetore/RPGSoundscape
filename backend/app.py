@@ -9,7 +9,6 @@ import queue
 import secrets
 import shutil
 import subprocess
-import tempfile
 import threading
 import time
 import zipfile
@@ -701,20 +700,43 @@ def get_library():
     data = sync_library_with_disk()
     return data["tracks"]
 
+class _ChunkedZipWriter:
+    """File-like adapter that lets zipfile write straight into the response.
+
+    zipfile detects the missing tell()/seek() and falls back to data
+    descriptors, so entries stay streamable without a seekable buffer.
+    """
+
+    def __init__(self) -> None:
+        self._chunks: List[bytes] = []
+
+    def write(self, data: bytes) -> int:
+        self._chunks.append(bytes(data))
+        return len(data)
+
+    def flush(self) -> None:
+        pass
+
+    def drain(self):
+        while self._chunks:
+            yield self._chunks.pop(0)
+
+
 @app.get("/api/library/export")
 def export_library():
     """Stream the whole library (metadata, presets and audio) as a ZIP.
 
     The Android app scans a QR code that points to this endpoint, then
     downloads the archive over the local Wi-Fi network and imports it into
-    its offline library.
+    its offline library. The archive is generated on the fly so the first
+    byte leaves immediately even for multi-gigabyte libraries - the phone's
+    transfer used to time out while the whole ZIP was being buffered.
     """
     data = sync_library_with_disk()
     tracks = data.get("tracks", [])
     presets = load_json(PRESETS_FILE, [])
     library_root = LIBRARY_DIR.resolve()
 
-    export_file = tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024, mode="w+b")
     included = []
     for track in tracks:
         filename = str(track.get("filename") or "")
@@ -735,34 +757,43 @@ def export_library():
         "presets": len(presets),
     }
 
-    with zipfile.ZipFile(export_file, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
-        archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
-        archive.writestr("library.json", json.dumps(tracks, ensure_ascii=False, indent=2))
-        archive.writestr("presets.json", json.dumps(presets, ensure_ascii=False, indent=2))
-        for file_path, archive_name in included:
-            # Audio is already compressed; storing it avoids a pointless
-            # CPU-heavy deflate pass over hundreds of megabytes.
-            archive.write(file_path, archive_name, compress_type=zipfile.ZIP_STORED)
-
-    size = export_file.tell()
-    export_file.seek(0)
-
     headers = {
         "Content-Disposition": 'attachment; filename="rpg_soundscape_library.zip"',
-        "Content-Length": str(size),
         "Cache-Control": "no-store",
         "X-RPG-Tracks": str(len(included)),
     }
 
     def iter_archive():
-        try:
-            while True:
-                chunk = export_file.read(1024 * 1024)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            export_file.close()
+        writer = _ChunkedZipWriter()
+        # Audio is already compressed, so STORED (the archive default here)
+        # avoids a pointless CPU-heavy deflate pass over hundreds of
+        # megabytes; the small JSON entries are deflated explicitly.
+        with zipfile.ZipFile(writer, "w", zipfile.ZIP_STORED, allowZip64=True) as archive:
+            archive.writestr(
+                "manifest.json",
+                json.dumps(manifest, ensure_ascii=False, indent=2),
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            archive.writestr(
+                "library.json",
+                json.dumps(tracks, ensure_ascii=False, indent=2),
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            archive.writestr(
+                "presets.json",
+                json.dumps(presets, ensure_ascii=False, indent=2),
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            yield from writer.drain()
+            for file_path, archive_name in included:
+                with open(file_path, "rb") as audio, archive.open(archive_name, "w") as entry:
+                    while True:
+                        chunk = audio.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        entry.write(chunk)
+                yield from writer.drain()
+        yield from writer.drain()
 
     return StreamingResponse(iter_archive(), media_type="application/zip", headers=headers)
 
