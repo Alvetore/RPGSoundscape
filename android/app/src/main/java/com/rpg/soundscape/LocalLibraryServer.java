@@ -73,7 +73,7 @@ public class LocalLibraryServer extends NanoHTTPD {
                 JSONObject info = new JSONObject();
                 info.put("status", "online");
                 info.put("app", "RPG Music & Ambience Studio");
-                info.put("version", "1.1.2");
+                info.put("version", "1.1.3");
                 info.put("lan_ip", "127.0.0.1");
                 info.put("access_url", "http://127.0.0.1:" + getListeningPort() + "/");
                 info.put("transfer_url", "");
