@@ -2,12 +2,13 @@ import sys
 import os
 import json
 import argparse
+import atexit
 import logging
 import re
 import shutil
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -69,6 +70,39 @@ def dynamic_proxies_enabled() -> bool:
     )
 
 
+def _proxy_reachable(proxy: str, timeout: float = 6.0) -> bool:
+    """True when YouTube answers through this proxy."""
+    # urllib cannot speak SOCKS; those are handed to yt-dlp unprobed.
+    if proxy.startswith("socks"):
+        return True
+    proxy_url = (
+        proxy if re.match(r"^(?:http|https)://", proxy) else f"http://{proxy}"
+    )
+    try:
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+        )
+        with opener.open(
+            "https://www.youtube.com/generate_204", timeout=timeout
+        ) as response:
+            return response.status in (200, 204)
+    except Exception:
+        return False
+
+
+def filter_reachable_proxies(proxies: list, timeout: float = 6.0) -> list:
+    """Parallel liveness probe; keeps order and drops dead proxies fast.
+
+    A dead hard-coded address then costs one shared 6-second probe instead
+    of a full yt-dlp connection timeout per download attempt.
+    """
+    if not proxies:
+        return []
+    with ThreadPoolExecutor(max_workers=min(50, len(proxies))) as pool:
+        verdicts = pool.map(lambda proxy: _proxy_reachable(proxy, timeout), proxies)
+        return [proxy for proxy, ok in zip(proxies, verdicts) if ok]
+
+
 def collect_dynamic_proxies() -> list:
     """Fetch a fresh free-proxy list and keep hosts that reach YouTube."""
     candidates = []
@@ -85,31 +119,7 @@ def collect_dynamic_proxies() -> list:
         except Exception as exc:
             logging.debug("proxy list source failed: %s", exc)
 
-    candidates = list(dict.fromkeys(candidates))[:500]
-
-    def reachable(proxy: str) -> str:
-        proxy_url = f"http://{proxy}"
-        try:
-            opener = urllib.request.build_opener(
-                urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
-            )
-            with opener.open(
-                "https://www.youtube.com/generate_204", timeout=6
-            ) as response:
-                if response.status in (200, 204):
-                    return proxy
-        except Exception:
-            return ""
-        return ""
-
-    working = []
-    with ThreadPoolExecutor(max_workers=50) as pool:
-        futures = [pool.submit(reachable, proxy) for proxy in candidates]
-        for future in as_completed(futures):
-            proxy = future.result()
-            if proxy:
-                working.append(proxy)
-    return working[:12]
+    return filter_reachable_proxies(list(dict.fromkeys(candidates))[:500])[:12]
 
 
 def is_youtube_url(url: str) -> bool:
@@ -384,6 +394,10 @@ def main():
             opts['cookiefile'] = str(temp_cookie_copy)
         except Exception:
             opts['cookiefile'] = args.cookies_file
+        # The copy holds a live Google session; it must not survive the
+        # process on any exit path (return, sys.exit, unhandled exception).
+        # Hard kills are cleaned up by the backend's startup sweep.
+        atexit.register(lambda: temp_cookie_copy.unlink(missing_ok=True))
     elif args.browser in ("chrome", "firefox", "edge", "opera", "brave", "vivaldi"):
         opts['cookiesfrombrowser'] = (args.browser,)
 
@@ -451,6 +465,14 @@ def main():
         static_proxies = get_proxies()
         if static_proxies:
             emit(status="downloading", percent=0, fallback="proxy")
+            # Hard-coded addresses can rot. Verify them first so dead ones
+            # cost a single shared probe instead of yt-dlp timeouts each.
+            static_proxies = filter_reachable_proxies(static_proxies)
+            if not static_proxies:
+                ytdlp_error = Exception(
+                    f"{ytdlp_error}; Static proxies failed the YouTube reachability check"
+                )
+        if static_proxies:
             try:
                 result = download_via_proxies(
                     args.url,

@@ -3,9 +3,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import yt_worker
 from yt_worker import (
     extract_cobalt_media_url,
     dynamic_proxies_enabled,
+    filter_reachable_proxies,
     get_cobalt_apis,
     get_proxies,
     is_safe_media_url,
@@ -61,3 +63,59 @@ def test_dynamic_proxy_discovery_can_be_disabled(monkeypatch):
     assert dynamic_proxies_enabled() is False
     monkeypatch.setenv("RPG_YTDL_DYNAMIC_PROXIES", "1")
     assert dynamic_proxies_enabled() is True
+
+
+def test_filter_reachable_proxies_keeps_only_alive_in_order(monkeypatch):
+    alive = {"10.0.0.1:8080": True, "10.0.0.2:3128": False, "10.0.0.3:80": True}
+    monkeypatch.setattr(
+        yt_worker, "_proxy_reachable", lambda proxy, timeout=6.0: alive[proxy]
+    )
+    assert filter_reachable_proxies(list(alive)) == ["10.0.0.1:8080", "10.0.0.3:80"]
+
+
+def test_filter_reachable_proxies_empty_list():
+    assert filter_reachable_proxies([]) == []
+
+
+def test_proxy_reachable_probes_youtube(monkeypatch):
+    class FakeResponse:
+        status = 204
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    seen = {}
+
+    class FakeOpener:
+        def open(self, url, timeout=None):
+            seen["url"] = url
+            seen["timeout"] = timeout
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        yt_worker.urllib.request, "build_opener", lambda handler: FakeOpener()
+    )
+    assert yt_worker._proxy_reachable("203.0.113.5:8080") is True
+    assert seen["url"] == "https://www.youtube.com/generate_204"
+
+
+def test_dead_proxy_reports_unreachable(monkeypatch):
+    class FakeOpener:
+        def open(self, url, timeout=None):
+            raise OSError("connection refused")
+
+    monkeypatch.setattr(
+        yt_worker.urllib.request, "build_opener", lambda handler: FakeOpener()
+    )
+    assert yt_worker._proxy_reachable("203.0.113.9:8080") is False
+
+
+def test_socks_proxies_are_not_probed(monkeypatch):
+    def unexpected(*args, **kwargs):
+        raise AssertionError("SOCKS proxies must not be probed via urllib")
+
+    monkeypatch.setattr(yt_worker.urllib.request, "build_opener", unexpected)
+    assert yt_worker._proxy_reachable("socks5://203.0.113.10:1080") is True

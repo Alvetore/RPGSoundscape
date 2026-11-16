@@ -103,6 +103,24 @@ def migrate_legacy_storage():
 
 migrate_legacy_storage()
 
+def cleanup_stale_session_copies(max_age_sec: int = 24 * 3600):
+    """Delete leaked yt-worker cookie/session copies left by older builds.
+
+    The worker now removes its private cookie copy on exit; this sweep also
+    clears files earlier versions left behind (e.g. after a hard kill).
+    Fresh copies are kept so running downloads are not disturbed.
+    """
+    now = time.time()
+    for pattern in ("worker_cookie_*.txt", "temp_session_*.txt"):
+        for path in DATA_DIR.glob(pattern):
+            try:
+                if now - path.stat().st_mtime > max_age_sec:
+                    path.unlink()
+            except Exception as e:
+                logger.warning(f"Could not remove stale session copy {path}: {e}")
+
+cleanup_stale_session_copies()
+
 METADATA_FILE = DATA_DIR / "library.json"
 PRESETS_FILE = DATA_DIR / "presets.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
