@@ -281,9 +281,10 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
                       <QRCodeSVG
                         value={fullUrl}
                         size={128}
-                        bgColor="#151922"
-                        fgColor="#eab308"
+                        bgColor="#f8fafc"
+                        fgColor="#151922"
                         level="M"
+                        marginSize={2}
                         title="QR-код для подключения Android-пульта"
                       />
                     </div>
@@ -333,9 +334,10 @@ export const MobileConnectModal: React.FC<MobileConnectModalProps> = ({
                       <QRCodeSVG
                         value={transferUrl}
                         size={128}
-                        bgColor="#151922"
-                        fgColor="#eab308"
+                        bgColor="#f8fafc"
+                        fgColor="#151922"
                         level="M"
+                        marginSize={2}
                         title="QR-код для переноса библиотеки"
                       />
                     </div>
