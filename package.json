@@ -7,6 +7,7 @@
     "start": "electron electron/main.cjs",
     "prepare:runtime": "py -3.14 scripts\\prepare_runtime.py",
     "build:backend": "py -3.14 scripts\\build_backend.py",
+    "build:launcher": "py -3.14 scripts\\build_launcher.py",
     "build:frontend": "cd frontend && npm run build",
     "build:android": "py -3.14 scripts\\build_android.py",
     "dist": "npm run prepare:runtime && npm run build:backend && npm run build:frontend && electron-builder --win",

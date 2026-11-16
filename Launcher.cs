@@ -26,9 +26,15 @@ namespace RPGSoundscapeLauncher
                 }
 
                 // Priority 2: Standalone portable single-file executable
-                string portableExe = Path.Combine(baseDir, "release", "RPGSoundscape 1.0.0.exe");
-                if (File.Exists(portableExe))
+                // (electron-builder names it RPGSoundscape-Portable-<version>.exe)
+                string portableDir = Path.Combine(baseDir, "release");
+                string[] portableExes = Directory.Exists(portableDir)
+                    ? Directory.GetFiles(portableDir, "RPGSoundscape-Portable-*.exe")
+                    : new string[0];
+                if (portableExes.Length > 0)
                 {
+                    Array.Sort(portableExes);
+                    string portableExe = portableExes[0];
                     ProcessStartInfo psi = new ProcessStartInfo(portableExe);
                     psi.WorkingDirectory = Path.GetDirectoryName(portableExe);
                     psi.UseShellExecute = true;
@@ -49,7 +55,7 @@ namespace RPGSoundscapeLauncher
                 }
 
                 MessageBox.Show(
-                    "Файл RPGSoundscape.exe не найден в папке release\\win-unpacked! Пожалуйста, проверьте файлы программы.",
+                    "Файл RPGSoundscape.exe не найден ни в release\\win-unpacked, ни portable-сборка в папке release! Пожалуйста, проверьте файлы программы.",
                     "RPG Soundscape Studio",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning
