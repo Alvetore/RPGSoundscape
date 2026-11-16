@@ -1,9 +1,16 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  test: {
+    // happy-dom allows switching window.location across origins, which the
+    // client-role tests need (loopback host vs LAN host).
+    environment: 'happy-dom',
+    include: ['src/**/*.test.{ts,tsx}'],
+  },
   server: {
     port: 5173,
     host: '0.0.0.0', // Allow access from Android phones/tablets on local Wi-Fi
