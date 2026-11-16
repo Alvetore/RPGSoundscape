@@ -14,6 +14,9 @@ import java.util.concurrent.Executors;
 
 /** Downloads the desktop library ZIP over Wi-Fi and imports it locally. */
 public class TransferClient {
+    /** Hard cap for the downloaded archive, aligned with the import limit. */
+    private static final long MAX_DOWNLOAD_BYTES = LibraryStore.MAX_IMPORT_BYTES;
+
     public interface Callback {
         /** percent is 0..100, or -1 when the server did not send a length. */
         void onProgress(int percent);
@@ -59,6 +62,9 @@ public class TransferClient {
                     while ((read = input.read(buffer)) != -1) {
                         output.write(buffer, 0, read);
                         downloaded += read;
+                        if (downloaded > MAX_DOWNLOAD_BYTES) {
+                            throw new IOException("Библиотека слишком большая для переноса");
+                        }
                         if (total > 0) {
                             int percent = (int) Math.min(100, downloaded * 100 / total);
                             if (percent != lastPercent) {

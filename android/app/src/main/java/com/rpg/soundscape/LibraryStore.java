@@ -32,7 +32,7 @@ public class LibraryStore {
     private static final String TAG = "LibraryStore";
     private static final Set<String> AUDIO_EXTENSIONS = new HashSet<>(Arrays.asList(
             ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".webm", ".aac", ".opus"));
-    private static final long MAX_IMPORT_BYTES = 8L * 1024 * 1024 * 1024;
+    static final long MAX_IMPORT_BYTES = 8L * 1024 * 1024 * 1024;
 
     private final File audioDir;
     private final File libraryFile;
