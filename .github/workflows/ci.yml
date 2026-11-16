@@ -55,6 +55,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          # Cache gradle deps+wrapper: fresh runners re-download the whole AGP
+          # classpath from Maven Central every run, which 429-rate-limits in
+          # waves and fails the build for reasons unrelated to the code.
+          cache: gradle
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
