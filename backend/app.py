@@ -137,7 +137,7 @@ try:
 except Exception as e:
     logger.warning(f"Could not persist API token: {e}")
 
-app = FastAPI(title="RPG Music & Ambience Studio", version="1.0.0")
+app = FastAPI(title="RPG Music & Ambience Studio", version="1.1.2")
 
 def _request_token(request: Request) -> str:
     return (
@@ -685,7 +685,7 @@ def get_info(request: Request):
     return {
         "status": "online",
         "app": "RPG Music & Ambience Studio",
-        "version": "1.1.1",
+        "version": "1.1.2",
         "lan_ip": ip,
         "access_url": f"http://{ip}:{port}/?token={token}&role=remote",
         # The Android app scans this URL to start a full library transfer.
